@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>101 Okey — Çok Oyunculu Test</title>
+<style>
+body { font-family: system-ui, sans-serif; background: #14503a; color: #fff; margin: 0; padding: 20px; }
+.card { background: rgba(0,0,0,.3); border-radius: 12px; padding: 16px; max-width: 480px; margin: 0 auto 14px; }
+h1 { font-size: 22px; } h1 span { color: #ffd54f; }
+input, button { padding: 10px; border-radius: 8px; border: none; font-size: 15px; margin: 4px 2px; }
+input { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.3); }
+button { background: #ffd54f; font-weight: 700; cursor: pointer; }
+#log { font-size: 13px; max-height: 260px; overflow-y: auto; line-height: 1.6; }
+.seat { display: inline-block; background: rgba(255,255,255,.14); padding: 4px 10px; border-radius: 999px; margin: 3px; }
+.seat.host { outline: 2px solid #ffd54f; }
+.muted { opacity: .6; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>101 <span>OKEY</span> — Çok Oyunculu Prototip</h1>
+  <div class="muted">Aynı odaya katılan oyuncular birbirini görür; aksiyon mesajları odadaki herkese iletilir (röle mimarisi).</div>
+</div>
+<div class="card" id="joinbox">
+  <input id="name" placeholder="Adınız" value="Oyuncu">
+  <input id="room" placeholder="Oda kodu" value="MASA1" style="width:90px">
+  <button onclick="join()">Odaya Katıl</button>
+</div>
+<div class="card">
+  <div><b>Odadakiler:</b> <span id="players" class="muted">—</span></div>
+</div>
+<div class="card">
+  <input id="chat" placeholder="mesaj / test aksiyonu" style="width:60%">
+  <button onclick="sendChat()">Gönder</button>
+  <button onclick="sendAction()">Test Aksiyonu</button>
+  <div id="log"></div>
+</div>
+<script>
+let ws = null, mySeat = -1;
+const log = (s) => {
+  const d = document.getElementById('log');
+  d.innerHTML = '<div>' + s + '</div>' + d.innerHTML;
+};
+function join() {
+  const name = document.getElementById('name').value || 'Oyuncu';
+  const room = document.getElementById('room').value || 'MASA1';
+  if (ws) ws.close();
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'join', name, room }));
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.type === 'joined') { mySeat = m.seat; log('✅ Odaya katıldın: ' + m.room + ' (koltuk ' + m.seat + ')'); }
+    else if (m.type === 'room') {
+      document.getElementById('players').innerHTML = m.players
+        .map(p => '<span class="seat' + (p.seat === m.hostSeat ? ' host' : '') + '">' + p.name + ' (' + p.seat + ')</span>').join('');
+      log('👥 Oda güncellendi: ' + m.players.length + ' oyuncu');
+    }
+    else if (m.type === 'chat') log('💬 <b>' + m.from + ':</b> ' + m.text);
+    else if (m.type === 'action') log('🎲 Koltuk ' + m.seat + ' aksiyonu: <code>' + JSON.stringify(m.data) + '</code>');
+    else if (m.type === 'error') log('⚠️ ' + m.err);
+  };
+  ws.onclose = () => log('Bağlantı kapandı.');
+}
+function sendChat() {
+  const t = document.getElementById('chat').value;
+  if (ws && t) { ws.send(JSON.stringify({ type: 'chat', text: t })); document.getElementById('chat').value = ''; }
+}
+function sendAction() {
+  if (ws) ws.send(JSON.stringify({ type: 'action', data: { move: 'discard', tile: { color: 2, num: 7 } } }));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "okey101",
+  "version": "1.0.0",
+  "private": true,
+  "description": "101 Okey — sunucu-otoriter çok oyunculu okey oyunu",
+  "scripts": {
+    "start": "node server/okey-server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
