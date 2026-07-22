@@ -122,9 +122,18 @@ function initStart() {
   $('inp-name').value = store.get('okey101_name', 'Sen');
   $('lvl-line').innerHTML = '<span class="lvl">Sv ' + lv + '</span>' +
     '<div class="lvlbar"><div class="lvlfill" style="width:' + Math.round(prog * 100) + '%"></div></div>';
-  $('chips-val').textContent = fmtChips(meta.chips);
+  $('chips-val').textContent = fmtChips(netReady() ? NET.user.chips : meta.chips); // online: sunucu cüzdanı
   const gb = $('banner-gift');
-  if (giftReady()) {
+  if (netReady() && NET.user.daily) { // online: sunucudan günlük bonus + seri
+    const d = NET.user.daily;
+    if (d.can) {
+      gb.classList.add('ready');
+      gb.innerHTML = '🎁 GÜNLÜK BONUS<br><span>GÜN ' + d.streakIfClaim + ' · ' + fmtChips(d.reward) + ' — TOPLA!</span>';
+    } else {
+      gb.classList.remove('ready');
+      gb.innerHTML = '🔥 SERİ: ' + d.streak + ' GÜN<br><span>Yarın: ' + fmtChips(DAILY_NEXT(d.streak)) + ' çip</span>';
+    }
+  } else if (giftReady()) {
     gb.classList.add('ready');
     gb.innerHTML = '🎁 2.500 ÇİP<br><span>HEDİYE — TOPLA!</span>';
   } else {
@@ -141,15 +150,24 @@ function rizStake() {
   return Math.max(1000, Math.min(50000, Math.min(raw, meta.chips)));
 }
 $('inp-name').onchange = () => store.set('okey101_name', ($('inp-name').value || 'Sen').trim().slice(0, 12) || 'Sen');
-$('btn-start').onclick = () => { // HEMEN OYNA: ayarlardaki tercihlerle (farketmez = rastgele)
+$('btn-start').onclick = () => { // OYNA: online hızlı eşleşme (sunucu yoksa çevrimdışı pratik)
   const cfg = Object.assign({}, settings);
   cfg.el = qp.el || 1 + Math.floor(Math.random() * 5);
   cfg.esli = qp.mod === 'any' ? Math.random() < 0.35 : qp.mod === 'esli';
   cfg.yardimli = qp.yard === 'any' ? Math.random() < 0.8 : qp.yard === 'yard';
   cfg.katlamali = qp.kat === 'any' ? Math.random() < 0.5 : qp.kat === 'kat';
   cfg.rizikolu = false;
-  cfg.bahis = Math.min(Math.max(500, settings.bahis || 1000), meta.chips);
-  launch(cfg);
+  netTry(ok => {
+    if (ok) {
+      const stake = Math.min(Math.max(500, settings.bahis || 1000), NET.user.chips);
+      if (NET.user.chips < 500) { toast('Online bakiyen yetersiz.', true); return; }
+      netJoin(stake, cfg.el, { esli: cfg.esli, katlamali: cfg.katlamali }, cfg.yardimli);
+    } else {
+      toast('Sunucuya ulaşılamadı — çevrimdışı pratik modu.', true);
+      cfg.bahis = Math.min(Math.max(500, settings.bahis || 1000), meta.chips);
+      launch(cfg);
+    }
+  });
 };
 $('btn-odasec').onclick = () => odaSecDialog(ROOMS.findIndex(r => r.id === settings.room));
 $('btn-masaac').onclick = () => masaAcDialog(ROOMS.findIndex(r => r.id === settings.room));
@@ -180,10 +198,22 @@ function rizDialog() {
   $('rz-x').onclick = closeModal;
   $('rz-ok').onclick = () => {
     closeModal();
-    launch({ room: settings.room, bahis, el: 1, yardimli: yard, katlamali: kat, rizikolu: true });
+    netTry(ok => {
+      if (ok) netJoin(bahis, 1, { rizikolu: true, katlamali: kat }, yard);
+      else {
+        toast('Sunucuya ulaşılamadı — çevrimdışı pratik modu.', true);
+        launch({ room: settings.room, bahis, el: 1, yardimli: yard, katlamali: kat, rizikolu: true });
+      }
+    });
   };
 }
+const DAILY_NEXT = s => [5000, 10000, 15000, 25000, 40000, 60000, 100000][Math.min(s, 6)];
 $('banner-gift').onclick = () => {
+  if (netReady() && NET.user.daily) { // online günlük bonus
+    if (NET.user.daily.can) netSend({ t: 'daily' });
+    else toast('Bugünün bonusu alındı — seri bozulmasın, yarın gel! 🔥');
+    return;
+  }
   if (!giftReady()) return;
   meta.chips += GIFT_AMOUNT;
   store.set('okey101_gift', Date.now());
@@ -310,6 +340,7 @@ function showSettings() {
   if (lv) lv.onclick = () => { closeModal(); leaveTable(); };
 }
 function leaveTable() {
+  if (NET.on) { NET.leaving = false; netSend({ t: 'leave' }); return; } // sunucu 'left' dönünce menüye
   stopTurnTimer();
   // bahis zaten oyun başında ödendi — geri verilmez (bahis yanar)
   G = null;
@@ -339,10 +370,11 @@ $('btn-sort-l').onclick = () => { if (G) { ui.counterMode = 'cift'; sortRack('pa
 $('btn-sort-r').onclick = () => { if (G) { ui.counterMode = 'seri'; sortRack('runs'); render(); } };
 
 /* ---- oda başlığı: oklar hep aynı yerde, uçlarda durur (başa sarmaz) ---- */
-function roomRich(room) { return room.tavan > 0 && meta.chips > room.tavan; } // bakiye tavanı aşarsa giremez
+function walletChips() { return (typeof netReady === 'function' && netReady()) ? NET.user.chips : meta.chips; } // online: sunucu cüzdanı
+function roomRich(room) { return room.tavan > 0 && walletChips() > room.tavan; } // bakiye tavanı aşarsa giremez
 function roomHeadHtml(ri) {
   const room = ROOMS[ri];
-  const locked = meta.chips < room.giris;
+  const locked = walletChips() < room.giris;
   const note = locked ? ' · 🔒 Giriş şartı: ' + fmtChips(room.giris)
     : roomRich(room) ? ' · 💰 Tavan ' + fmtChips(room.tavan) + ' — bakiyen çok yüksek' : '';
   return '<div class="roomnav">' +
@@ -362,12 +394,13 @@ function bindRoomNav(ri, open) {
 function masaAcDialog(ri) {
   ri = Math.max(0, ri);
   const room = ROOMS[ri];
-  const locked = meta.chips < room.giris;
-  const maxB = Math.min(room.max, Math.max(room.min, meta.chips));
+  const myChips = walletChips(); // online: sunucu cüzdanı geçerli
+  const locked = myChips < room.giris;
+  const maxB = Math.min(room.max, Math.max(room.min, myChips));
   let bahis = Math.min(Math.max(settings.bahis, room.min), maxB);
   let el = Math.min(5, Math.max(1, settings.el || 3));
   let yard = settings.yardimli, kat = settings.katlamali, esli = !!settings.esli;
-  const canPlay = !locked && !roomRich(room) && meta.chips >= room.min;
+  const canPlay = !locked && !roomRich(room) && myChips >= room.min;
   modal(
     roomHeadHtml(ri) +
     '<div class="dlg-row"><span class="lbl">BAHİS</span><span class="val" id="dg-bval"><span class="coin">M</span> ' + fmtChips(bahis) + '</span></div>' +
@@ -401,7 +434,13 @@ function masaAcDialog(ri) {
   $('dg-x').onclick = closeModal;
   $('dg-ok').onclick = () => {
     closeModal();
-    launch({ room: room.id, bahis, el, yardimli: yard, katlamali: kat, esli });
+    netTry(ok => {
+      if (ok) netJoin(bahis, el, { esli, katlamali: kat }, yard);
+      else {
+        toast('Sunucuya ulaşılamadı — çevrimdışı pratik modu.', true);
+        launch({ room: room.id, bahis, el, yardimli: yard, katlamali: kat, esli });
+      }
+    });
   };
 }
 
@@ -409,7 +448,7 @@ function masaAcDialog(ri) {
 function odaSecDialog(ri) {
   ri = Math.max(0, ri);
   const room = ROOMS[ri];
-  const locked = meta.chips < room.giris;
+  const locked = walletChips() < room.giris;
   modal(
     roomHeadHtml(ri) +
     '<div class="dlg-row"><span class="lbl">🃏 EL SAYISI</span><span class="val">1 – 5 (masaya göre)</span></div>' +
@@ -420,7 +459,13 @@ function odaSecDialog(ri) {
   );
   bindRoomNav(ri, odaSecDialog);
   $('dg-x').onclick = closeModal;
-  $('dg-ok').onclick = () => { closeModal(); roomTablesDialog(ri); };
+  $('dg-ok').onclick = () => {
+    closeModal();
+    netTry(ok => {
+      if (ok) netLobbyDialog(ri); // gerçek lobi: sunucudaki bekleyen masalar
+      else { toast('Sunucuya ulaşılamadı — örnek masalar (çevrimdışı).', true); roomTablesDialog(ri); }
+    });
+  };
 }
 function roomTablesDialog(ri) {
   const room = ROOMS[ri];
@@ -528,6 +573,13 @@ function syncRack() {
   const placed = new Set(rackSlots.filter(x => x != null));
   for (const t of me().hand) {
     if (placed.has(t.id)) continue;
+    // online: desteden slota sürüklendiyse taş tam o slota iner
+    if (typeof NET !== 'undefined' && NET.pendingSlot != null && rackSlots[NET.pendingSlot] == null) {
+      rackSlots[NET.pendingSlot] = t.id;
+      NET.pendingSlot = null;
+      placed.add(t.id);
+      continue;
+    }
     let idx = -1, last = -1;
     for (let i = 0; i < RACK_SLOTS; i++) if (rackSlots[i] != null) last = i;
     if (last + 2 < RACK_SLOTS && rackSlots[last + 2] == null) idx = last + 2;
@@ -613,6 +665,20 @@ function parseRackGroups() {
   }
   return groups;
 }
+/* seri, rafta ancak 11-12-13 gibi ARDIŞIK dizilirse geçerli sayılır (11-13-12 sayılmaz) */
+function orderedRun(tiles) {
+  const chk = dir => {
+    let expect = null;
+    for (const t of tiles) {
+      const e = E.effective(t, G.okey);
+      if (!e) { if (expect != null) expect += dir; continue; } // okey/★ sıradaki yeri doldurur
+      if (expect != null && e.num !== expect) return false;
+      expect = e.num + dir;
+    }
+    return true;
+  };
+  return chk(1) || chk(-1); // artan da azalan da kabul
+}
 /* performans: analiz render başına bir kez hesaplanır (telefon kasmasına karşı) */
 let _an = null;
 function analyzeRack() {
@@ -624,7 +690,7 @@ function analyzeRack() {
   for (const g of groups) {
     if (g.length >= 3) {
       const v = E.validateMeld(g, G.okey);
-      if (v.valid) {
+      if (v.valid && (v.type !== 'run' || orderedRun(g))) {
         melds.push(g); meldPtsTotal += v.points;
         g.forEach(t => meldIds.add(t.id));
       }
@@ -669,7 +735,7 @@ function renderHint() {
     bar.textContent = 'Perlerini boşluklarla ayır; yeterse SERİ AÇ. Gruba uzun bas: birlikte taşınır.';
     return;
   }
-  bar.textContent = 'Seri atabilir, işleyebilir ya da taşı köşene sürükleyip atabilirsin.';
+  bar.textContent = '';
 }
 
 /* ---------------- render ---------------- */
@@ -763,19 +829,21 @@ function renderSeats() {
     el.innerHTML = '';
     const ava = document.createElement('div');
     ava.className = 'ava';
-    ava.textContent = i === 0 ? '🙂' : BOT_AVAS[i - 1];
+    ava.textContent = avaOf(i);
     el.appendChild(ava);
     const side = (i === 1 || i === 3);
     const info = document.createElement('div');
     info.className = side ? 'vinfo' : 'info';
     info.innerHTML = seatInfoHtml(p, i);
     el.appendChild(info);
-    if (i !== 0 && p.opened) { // açış puanı mini taşlarla
+    if (p.opened) { // açış puanı mini taşlarla (kendi profilinde de görünür)
       const pr = document.createElement('div');
       pr.className = 'ptrowwrap';
       pr.innerHTML = ptRowHtml(p);
       el.appendChild(pr);
     }
+    el.style.cursor = 'pointer';
+    el.onclick = () => showPlayerCard(i); // profile tıkla: oyuncu istatistikleri
     if (p.opened) {
       const b = document.createElement('span');
       b.className = 'badge' + (p.openType === 'pairs' ? ' pairs' : '');
@@ -853,7 +921,7 @@ function renderHub() {
   const canDraw = G.turn === 0 && !G.hasDrawn && !ui.busy && !G.roundOver;
   deck.classList.toggle('can', canDraw && G.deck.length > 0);
   if (canDraw && G.deck.length > 0) attachSourcePointer(back, 'deck');
-  else if (canDraw && G.deck.length === 0) deck.onclick = () => { E.endRound(G); render(); showRoundEnd(); };
+  else if (canDraw && G.deck.length === 0) deck.onclick = () => { if (NET.on) { NET.act('draw'); return; } E.endRound(G); render(); showRoundEnd(); };
   else deck.onclick = null;
 
   const ind = $('indicator');
@@ -1243,6 +1311,7 @@ function attachSourcePointer(el, src) {
     if (!wasMoved) { src === 'deck' ? doDraw() : doTake(); return; }
     if (!slot) { render(); return; }
     const slotIdx = +slot.dataset.idx;
+    if (NET.on) { NET.pendingSlot = slotIdx; NET.act(src === 'deck' ? 'draw' : 'take'); render(); return; }
     const t = src === 'deck' ? E.drawFromDeck(G) : E.takeDiscard(G);
     if (!t) { render(); return; }
     ui.drawnId = t.id;
@@ -1255,27 +1324,33 @@ function attachSourcePointer(el, src) {
 }
 
 function dropDiscard(t) {
+  if (NET.on) { NET.act('discard', { id: t.id }); ui.sel.clear(); return; }
   const r = E.discardTile(G, t);
   if (!r.ok) { toast(r.err, true); render(); return; }
   if (r.penalty) toast('⚠ İşlek taş attın: +101 ceza!', true);
   afterDiscard();
 }
 function dropAttach(t, mi) {
+  if (NET.on) { NET.act('attach', { id: t.id, mi }); ui.sel.delete(t.id); return; }
   const r = E.attachTile(G, t, mi);
   if (!r.ok) { toast(r.err, true); render(); return; }
   ui.sel.delete(t.id);
   toast(tileName(t) + ' işlendi.');
   render();
+  startTurnTimer(); // işlem yaptı: süre 30 sn baştan
 }
 function dropSwap(t, mi) {
+  if (NET.on) { NET.act('swap', { id: t.id, mi }); ui.sel.clear(); return; }
   const r = E.swapForOkey(G, t, mi);
   if (!r.ok) { toast(r.err, true); render(); return; }
+  startTurnTimer(); // değişim yaptı: süre baştan
   ui.sel.clear();
   ui.drawnId = r.okey.id;
   toast(tileName(t) + ' perdeki okeyle değişti — OKEY artık rafında! 🎉');
   render();
 }
 function dropReturn() {
+  if (NET.on) { NET.act('return'); ui.sel.clear(); ui.drawnId = null; return; }
   const t = E.returnDiscard(G);
   ui.sel.clear(); ui.drawnId = null;
   if (t) toast('Taşı geri verdin — şimdi desteden çek.');
@@ -1314,10 +1389,12 @@ function botSeatTimer(idx) {
   st.classList.add('anim');
   sf.style.width = '0%';
 }
-function startTurnTimer() {
+function startTurnTimer(durOverride) {
+  if (NET.on) return; // online: süre sunucudan (netTick)
   stopTurnTimer();
   if (!G || G.roundOver || G.turn !== 0 || ui.busy) return;
-  const dur = me().opened ? 60 : TIMER_STEPS[Math.min(ui.timeouts, TIMER_STEPS.length - 1)];
+  // 60 sn SADECE açış yapılan turda; sonraki turlar 30 sn (işlem yapınca 30 baştan sayar)
+  const dur = durOverride || TIMER_STEPS[Math.min(ui.timeouts, TIMER_STEPS.length - 1)];
   timerTotal = dur;
   timerDeadline = Date.now() + dur * 1000;
   const st = $('seattimer');
@@ -1409,6 +1486,7 @@ function renderActions() {
 }
 
 function doUndoOpen() {
+  if (NET.on) { NET.act('undo'); return; }
   const r = E.undoOpen(G);
   if (!r.ok) { toast(r.err, true); return; }
   syncRack();
@@ -1416,6 +1494,7 @@ function doUndoOpen() {
   render();
 }
 function doDraw() {
+  if (NET.on) { NET.act('draw'); return; }
   if (G.deck.length === 0) { E.endRound(G); render(); showRoundEnd(); return; }
   const t = E.drawFromDeck(G);
   if (!t) return;
@@ -1426,6 +1505,7 @@ function doDraw() {
   render();
 }
 function doTake() {
+  if (NET.on) { NET.act('take'); return; }
   const t = E.takeDiscard(G);
   if (!t) return;
   ui.drawnId = t.id;
@@ -1437,18 +1517,24 @@ function doTake() {
 function doOpenParsed(mode, a) {
   const melds = mode === 'pairs' ? a.pairs : a.melds;
   if (!melds.length) { toast('Istakada geçerli grup yok. Taşları boşluklarla ayırarak grupla.', true); return; }
+  if (NET.on) {
+    NET.act('open', { melds: melds.map(g => g.map(t => t.id)), mode });
+    ui.sel.clear(); ui.hiddenOkeys.clear();
+    return;
+  }
   const rects = captureRackRects(melds);
   const r = E.openHand(G, melds, mode);
   if (!r.ok) { toast(r.err, true); return; }
   ui.sel.clear();
   ui.hiddenOkeys.clear(); // el masaya açıldı: kapalı okeyler görünür olur
   toast(mode === 'pairs' ? 'Çiftten açtın! (Yanlışsa: GERİ AL)' : 'Elini açtın! (' + a.meldPts + ' sayı) Yanlışsa: GERİ AL.');
-  startTurnTimer(); // açınca işleme süresi: 60 sn (ses her perin inişinde ayrı çalar)
+  startTurnTimer(60); // 60 sn işleme süresi SADECE açılan bu turda
   if (mode === 'pairs' && E.checkAllPairsCancel(G)) { render(); showRoundEnd(); return; }
   render();
   flyOpenedGroups(melds, rects);
 }
 function doLayParsed(a) {
+  if (NET.on) { for (const g of a.melds) NET.act('lay', { ids: g.map(t => t.id) }); ui.sel.clear(); return; }
   let laid = 0, lastErr = null;
   const rects = captureRackRects(a.melds);
   const done = [];
@@ -1461,9 +1547,11 @@ function doLayParsed(a) {
   ui.sel.clear();
   toast(laid + ' seri masaya atıldı.');
   render();
+  startTurnTimer(); // işlem: süre 30 sn baştan
   flyOpenedGroups(done, rects);
 }
 function doLayPairsParsed(a) {
+  if (NET.on) { for (const g of a.pairs) NET.act('layPair', { ids: g.map(t => t.id) }); ui.sel.clear(); return; }
   let laid = 0, lastErr = null;
   const rects = captureRackRects(a.pairs);
   const done = [];
@@ -1476,6 +1564,7 @@ function doLayPairsParsed(a) {
   ui.sel.clear();
   toast(laid + ' çift masaya atıldı.');
   render();
+  startTurnTimer(); // işlem: süre 30 sn baştan
   flyOpenedGroups(done, rects);
 }
 /* per açılırken grup halinde uçan animasyon (İŞLE'nin grup versiyonu) */
@@ -1683,6 +1772,20 @@ function playSnd(name, n) {
 }
 let islekAnimating = false;
 async function doAutoIslek() {
+  if (NET.on) { // online: işlenebilir taşlar sırayla sunucuya gönderilir
+    const a = analyzeRack();
+    let sent = 0;
+    for (const t of me().hand) {
+      if (me().hand.length - sent <= 1) break;
+      if (!a.islekIds.has(t.id)) continue;
+      const mi = G.tableMelds.findIndex(mm => E.canAttach(mm, t, G.okey));
+      if (mi < 0) continue;
+      setTimeout(() => NET.act('attach', { id: t.id, mi }), sent * 320);
+      sent++;
+    }
+    if (!sent) toast('İşlenecek taş yok.', true);
+    return;
+  }
   if (islekAnimating) return;
   islekAnimating = true;
   ui.busy = true;
@@ -1707,6 +1810,7 @@ async function doAutoIslek() {
   ui.sel.clear();
   toast(n + ' taş masaya işlendi.');
   render();
+  startTurnTimer(); // işlem: süre 30 sn baştan
 }
 function flyToMeld(t, srcRect, mi) {
   return new Promise(resolve => {
@@ -1739,6 +1843,7 @@ function flyToMeld(t, srcRect, mi) {
 }
 function doDiscard() {
   const t = handById([...ui.sel][0]);
+  if (NET.on) { if (t) NET.act('discard', { id: t.id }); ui.sel.clear(); return; }
   const srcEl = t && document.querySelector('#rack .tile[data-tid="' + t.id + '"]');
   const srcRect = srcEl && srcEl.getBoundingClientRect();
   const r = E.discardTile(G, t);
@@ -1901,7 +2006,7 @@ function showRoundEnd() {
 }
 
 /* oyun sonu satırı: avatar + isim + çip + puan (referans tasarım) */
-const avaOf = i => (i === 0 ? '🙂' : BOT_AVAS[i - 1]);
+const avaOf = i => (G && G.online && G.players[i] && G.players[i].ava) ? G.players[i].ava : (i === 0 ? '🙂' : BOT_AVAS[i - 1]);
 function resRow(o) {
   return '<div class="resrow' + (o.win ? ' win' : '') + (o.me ? ' me' : '') + '">' +
     '<span class="rava">' + (o.crown ? '<span class="rcrown">👑</span>' : '') + o.ava + '</span>' +
@@ -2077,6 +2182,7 @@ function renderChat() {
 function sendChat(txt) {
   txt = (txt || '').trim();
   if (!txt) return;
+  if (NET.on) { netSend({ t: 'chat', text: txt }); return; } // sunucu herkese (bana da) yayınlar
   addChat(store.get('okey101_name', 'Sen'), txt, true);
   if (G && Math.random() < 0.8) setTimeout(() => {
     if (!G) return;
@@ -2084,6 +2190,7 @@ function sendChat(txt) {
   }, 900 + Math.random() * 1600);
 }
 function maybeBotChat(p, events) {
+  if (NET.on) return; // online: sadece gerçek sohbet
   for (const e of events) {
     if ((e.type === 'open' || e.type === 'openPairs') && Math.random() < 0.7) { addChat(p.name, pick(BOT_CHAT.open), false); return; }
     if (e.type === 'discard' && e.finished) { addChat(p.name, pick(BOT_CHAT.finish), false); return; }
@@ -2156,8 +2263,59 @@ function friendChat(f) {
 }
 $('btn-friends').onclick = showFriends;
 
+/* ---- masadaki profile tıkla: oyuncu istatistik kartı (botlar temsili) ---- */
+function botStats(name) {
+  let h = 7;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 999983;
+  const games = 240 + h % 4700;
+  const winPct = 34 + h % 27;
+  return {
+    chips: 100000 + (h % 120) * 50000,
+    lv: 4 + h % 26,
+    games,
+    wins: Math.round(games * winPct / 100),
+    elden: 2 + h % 40,
+    start: String(1 + h % 28).padStart(2, '0') + '.' + String(1 + h % 12).padStart(2, '0') + '.' + (2021 + h % 5),
+  };
+}
+function showPlayerCard(i) {
+  if (!G) return;
+  if (NET.on) { netSend({ t: 'pcard', seat: (i + NET.seat) % 4 }); return; } // kart sunucudan gelir
+  const p = G.players[i];
+  const own = i === 0;
+  const s = own ? meta.stats : botStats(p.name);
+  const chips = own ? meta.chips : s.chips;
+  const lv = own ? levelOf(meta.xp) : s.lv;
+  const start = own ? meta.start : s.start;
+  const winPct = s.games ? Math.round(s.wins / s.games * 100) : 0;
+  modal('<h2>' + avaOf(i) + ' ' + escapeHtml(p.name) + '</h2>' +
+    '<div class="dlg-row"><span class="lbl">ÇİP</span><span class="val"><span class="coin">M</span> ' + fmtChips(chips) + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">SEVİYE</span><span class="val">' + lv + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">OYUN</span><span class="val">' + s.games + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">GALİBİYET</span><span class="val">' + s.wins + ' (%' + winPct + ')</span></div>' +
+    '<div class="dlg-row"><span class="lbl">ELDEN BİTME</span><span class="val">' + (s.elden || 0) + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">BAŞLANGIÇ</span><span class="val">' + start + '</span></div>' +
+    (p.opened ? '<div class="dlg-row"><span class="lbl">BU EL AÇIŞI</span><span class="val">' + p.openPoints + (p.openType === 'pairs' ? ' çift' : ' sayı') + '</span></div>' : '') +
+    (own ? '' : '<p class="rules" style="font-size:11px;text-align:center">Bot profili — gerçek oyuncu profilleri çok oyunculu sürümde buraya bağlanacak.</p>') +
+    '<div class="btnrow"><button class="btn" onclick="window.closeModal()">Kapat</button></div>');
+}
+
 /* ---------------- profil penceresi + görevler ---------------- */
+/* liderlik tablosu (sunucudan) */
+function netShowTop(m) {
+  const rows = m.rows.map(r => resRow({
+    crown: r.rank === 1, win: r.rank === 1,
+    ava: r.ava, me: NET.user && r.name === NET.user.name && r.chips === NET.user.chips,
+    name: r.rank + '. ' + r.name,
+    sub: 'Seviye ' + r.lv,
+    right: fmtChips(r.chips), rightSub: 'çip',
+  })).join('');
+  modal('<h2>🏆 SIRALAMA</h2><div class="reslist" style="max-height:52vh;overflow-y:auto">' + rows + '</div>' +
+    '<p class="reshead">Senin sıran: <b>#' + m.myRank + '</b> / ' + m.total + '</p>' +
+    '<div class="btnrow"><button class="btn" onclick="window.closeModal()">Kapat</button></div>');
+}
 function showProfile() {
+  if (netReady()) return showProfileOnline(); // online: her şey sunucudan
   const lv = levelOf(meta.xp), prog = Math.round((meta.xp % 250) / 250 * 100);
   const s = meta.stats;
   const TASKS = [
@@ -2190,7 +2348,395 @@ function showProfile() {
     closeModal(); showProfile(); initStart();
   });
 }
+/* online profil: sunucu istatistikleri + günlük görevler (ödüller sunucudan) */
+function showProfileOnline() {
+  const u = NET.user;
+  const lv = 1 + Math.floor(u.xp / 250);
+  const winPct = u.games ? Math.round(u.wins / u.games * 100) : 0;
+  const trows = (u.tasks || []).map(t =>
+    '<div class="dlg-row"><span class="lbl">' + t.name + ' <span class="tprog">' + t.prog + '/' + t.goal + '</span></span>' +
+    (t.claimed ? '<span class="dlg-toggle on">ALINDI ✓</span>'
+      : t.prog >= t.goal ? '<button class="btn small" data-ntask="' + t.id + '">🎁 ' + fmtChips(t.odul) + '</button>'
+      : '<span class="dlg-toggle dis">🎁 ' + fmtChips(t.odul) + '</span>') + '</div>').join('');
+  modal('<h2>👤 ' + escapeHtml(u.name) + '</h2>' +
+    '<div class="dlg-row"><span class="lbl">ÇİP</span><span class="val"><span class="coin">M</span> ' + fmtChips(u.chips) + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">SEVİYE</span><span class="val">' + lv + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">İSTATİSTİK</span><span class="val">' + u.games + ' oyun · ' + u.wins + ' galibiyet (%' + winPct + ') · ' + (u.elden || 0) + ' elden</span></div>' +
+    '<div class="dlg-row"><span class="lbl">🔥 GÜNLÜK SERİ</span><span class="val">' + (u.daily ? u.daily.streak : 0) + ' gün</span></div>' +
+    '<h2 style="font-size:15px;margin:8px 0 2px">🎯 Günlük Görevler</h2>' + (trows || '<p class="rules">Görevler yükleniyor…</p>') +
+    '<div class="btnrow"><button class="btn" onclick="window.closeModal()">Kapat</button></div>');
+  document.querySelectorAll('#modal-box [data-ntask]').forEach(b => b.onclick = () => netSend({ t: 'task', id: b.dataset.ntask }));
+}
+$('banner-top').onclick = () => netTry(ok => ok ? netSend({ t: 'top' }) : toast('Sıralama için sunucu bağlantısı gerekli.', true));
 $('profile-card').onclick = e => { if (e.target.id !== 'inp-name') showProfile(); };
+
+/* =====================================================================
+   ONLİNE MOD (FAZ A3) — sunucu-otoriter oyun istemcisi
+   Yerel G yerine sunucudan gelen koltuk-özel görüş; hamleler 'act' olarak
+   sunucuya gider. Koltuk rotasyonu: benim koltuğum her zaman yerel 0'dır.
+   ===================================================================== */
+const NET = {
+  on: false, ws: null, view: null, seat: -1,
+  token: store.get('okey101_nettoken', null),
+  pendingSlot: null, evQ: [], modalKind: null,
+  lastDeadline: 0, tTotal: 0, lastTurnLoc: -1,
+  lastStake: 1000, lastRounds: 1, user: null,
+  stakeFxDone: false, leaving: false, retries: 0, tickInt: null,
+};
+function netDevId() {
+  let d = store.get('okey101_devid', null);
+  if (!d) { d = 'dev-' + Math.random().toString(36).slice(2) + Date.now().toString(36); store.set('okey101_devid', d); }
+  return d;
+}
+function netUrl() {
+  const host = location.host || 'localhost:8101';
+  return (location.protocol === 'https:' ? 'wss://' : 'ws://') + host;
+}
+function netRot(srvSeat) { return (srvSeat - NET.seat + 4) % 4; }
+
+function netConnect(onReady) {
+  if (NET.ws && NET.ws.readyState === 1) { onReady && onReady(); return; }
+  let ws;
+  try { ws = new WebSocket(netUrl()); } catch (e) { toast('Sunucuya bağlanılamadı.', true); return; }
+  NET.ws = ws;
+  ws.onopen = () => {
+    NET.retries = 0;
+    ws.send(JSON.stringify(NET.token
+      ? { t: 'hello', token: NET.token, deviceId: netDevId(), name: store.get('okey101_name', 'Sen') }
+      : { t: 'hello', deviceId: netDevId(), name: store.get('okey101_name', 'Sen') }));
+    NET._onReady = onReady;
+  };
+  ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (err) { return; } netMsg(m); };
+  ws.onclose = () => {
+    if (!NET.on || NET.leaving) return;
+    netBanner('Bağlantı koptu — yeniden bağlanılıyor…');
+    if (++NET.retries <= 20) setTimeout(() => netConnect(), 1600);
+    else { netBanner(null); netExit('Bağlantı kurulamadı.'); }
+  };
+  ws.onerror = () => { try { ws.close(); } catch (e2) {} };
+}
+function netSend(o) { if (NET.ws && NET.ws.readyState === 1) NET.ws.send(JSON.stringify(o)); }
+NET.act = (a, extra) => netSend(Object.assign({ t: 'act', a }, extra || {}));
+
+function netBanner(txt) {
+  let b = $('netbanner');
+  if (!txt) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('div'); b.id = 'netbanner'; document.body.appendChild(b); }
+  b.textContent = txt;
+}
+
+function netMsg(m) {
+  switch (m.t) {
+    case 'welcome':
+      NET.token = m.token;
+      store.set('okey101_nettoken', m.token);
+      NET.user = m.user;
+      netBanner(null);
+      if (!NET.on && !$('scr-start').classList.contains('hidden')) initStart(); // menüde sunucu bakiyesi görünsün
+      if (NET._onReady) { const f = NET._onReady; NET._onReady = null; f(); }
+      break;
+    case 'joined':
+      NET.seat = m.seat;
+      NET.on = true;
+      currentStake = m.stake;
+      currentSettings = { online: true, yardimli: NET.pendingYard !== false, katlamali: true };
+      document.querySelectorAll('.rackside').forEach(b => b.classList.toggle('hidden', NET.pendingYard === false));
+      if (m.resumed) toast('Masana geri döndün — oyun kaldığı yerden.', false);
+      break;
+    case 'lobby': netRenderLobby(m); break;
+    case 'pcard': netShowPcard(m); break;
+    case 'me': NET.user = m.user; if (!NET.on) initStart(); break;
+    case 'daily':
+      if (m.ok) {
+        NET.user = m.user;
+        chipFx(m.reward);
+        toast('🎁 Günlük bonus: +' + fmtChips(m.reward) + ' çip! (Seri: ' + m.streak + ' gün)');
+        initStart();
+      }
+      break;
+    case 'task':
+      if (m.ok) {
+        NET.user = m.user;
+        chipFx(m.odul);
+        toast('🎯 Görev ödülü: +' + fmtChips(m.odul) + ' çip!');
+        initStart();
+        showProfile(); // pencere güncel haliyle yeniden
+      }
+      break;
+    case 'top': netShowTop(m); break;
+    case 'waiting': netWaitingModal(m); break;
+    case 'state': netApplyState(m.v); break;
+    case 'ev': netStashEv(m); break;
+    case 'roundEnd': netRoundEnd(m.s); break;
+    case 'final': netFinal(m); break;
+    case 'timeout': if (netRot(m.seat) === 0) toast('⏰ Süren doldu — senin yerine oynandı.', true); break;
+    case 'chat': addChat(m.from, m.text, NET.on && netRot(m.seat) === 0); break;
+    case 'err': toast(m.msg, true); break;
+    case 'left': netExit(); break;
+  }
+}
+
+/* sunucu görüşü → yerel G (koltuk rotasyonlu gölge durum) */
+function gFromView(v) {
+  const players = [0, 1, 2, 3].map(loc => {
+    const srv = (loc + v.seat) % 4;
+    const p = v.players[srv];
+    return {
+      name: p.name, ava: p.ava,
+      hand: loc === 0 ? v.hand : [],
+      opened: p.opened, openType: p.openType, openPoints: p.openPoints,
+      penalty: p.penalty, score: p.score,
+      tookDiscard: loc === 0 ? v.tookDiscard : null,
+    };
+  });
+  return {
+    online: true,
+    round: v.round, rounds: v.rounds,
+    turn: netRot(v.turn), hasDrawn: v.hasDrawn, roundOver: v.roundOver,
+    okey: v.okey, indicator: v.indicator,
+    deck: { length: v.deck },
+    discards: [0, 1, 2, 3].map(loc => v.discards[(loc + v.seat) % 4]),
+    tableMelds: v.tableMelds.map(mm => ({ owner: netRot(mm.owner), type: mm.type, tiles: mm.tiles })),
+    players,
+    katlamali: v.katlamali, carpan: v.carpan, esli: !!v.esli, rizikolu: !!v.rizikolu,
+    soloOpen: -1, penaltyLog: [], finisher: -1,
+    lastOpen: v.canUndo ? { player: 0 } : null,
+    turnCounter: 0,
+  };
+}
+
+function netApplyState(v) {
+  const prevIds = (NET.on && G && G.online) ? new Set(G.players[0].hand.map(t => t.id)) : null;
+  const newRound = !G || !G.online || G.round !== v.round;
+  NET.view = v;
+  NET.seat = v.seat;
+  if (v.deadline !== NET.lastDeadline) {
+    NET.lastDeadline = v.deadline;
+    NET.tTotal = v.deadline ? Math.max(1000, v.deadline - Date.now()) : 0;
+  }
+  G = gFromView(v);
+  if (NET.modalKind === 'waiting') { closeModal(); NET.modalKind = null; }
+  if (newRound) {
+    rackSlots = new Array(RACK_SLOTS).fill(null);
+    me().hand.forEach((t, i) => { rackSlots[i] = t.id; });
+    sortRack('runs');
+    ui.sel.clear(); ui.hiddenOkeys.clear(); ui.drawnId = null;
+    ui.counterMode = 'seri';
+    ui.lastCarpan = 1;
+    if (NET.modalKind === 'round') { closeModal(); NET.modalKind = null; }
+    playSnd('shuffle');
+    if (!NET.stakeFxDone) { NET.stakeFxDone = true; setTimeout(() => chipFx(-currentStake), 600); }
+  } else if (prevIds) {
+    const added = me().hand.filter(t => !prevIds.has(t.id));
+    if (added.length === 1 && G.turn === 0 && G.hasDrawn) ui.drawnId = added[0].id;
+  }
+  $('scr-start').classList.add('hidden');
+  $('scr-game').classList.remove('hidden');
+  document.querySelectorAll('.rackside').forEach(b => b.classList.remove('hidden'));
+  render();
+  netRunEvQ();
+  if (G.turn !== NET.lastTurnLoc) {
+    NET.lastTurnLoc = G.turn;
+    if (!v.deadline && !G.roundOver) botSeatTimer(G.turn);
+  }
+  if (!NET.tickInt) NET.tickInt = setInterval(netTick, 250);
+}
+
+/* olaylar: kaynak konumlar state uygulanmadan yakalanır, render SONRASI oynatılır */
+function netStashEv(m) {
+  const loc = netRot(m.seat);
+  const stash = { loc, events: m.events, rects: {} };
+  if (loc === 0) {
+    for (const e of m.events) {
+      const tiles = e.melds ? e.melds.flat() : (e.tiles || (e.tile ? [e.tile] : []));
+      for (const t of tiles) {
+        const el = document.querySelector('#rack .tile[data-tid="' + t.id + '"]');
+        if (el) stash.rects[t.id] = el.getBoundingClientRect();
+      }
+    }
+  }
+  NET.evQ.push(stash);
+}
+async function netRunEvQ() {
+  const q = NET.evQ.splice(0);
+  for (const s of q) {
+    for (const e of s.events) {
+      const srcMap = tiles => (s.loc === 0 && Object.keys(s.rects).length) ? s.rects : seatSrcMap(s.loc, tiles);
+      if ((e.type === 'open' || e.type === 'openPairs') && e.melds) {
+        for (const tiles of e.melds) await flyGroup(tiles, srcMap(tiles));
+      } else if ((e.type === 'lay' || e.type === 'layPair') && e.tiles) {
+        await flyGroup(e.tiles, srcMap(e.tiles));
+      } else if (e.type === 'attach' && e.tile) {
+        await flyGroup([e.tile], srcMap([e.tile]));
+      } else if (e.type === 'discard' && e.tile) {
+        const src = s.loc === 0 ? s.rects[e.tile.id] : seatSrcMap(s.loc, [e.tile])[e.tile.id];
+        await flyToCorner(e.tile, src, s.loc);
+        if (e.penalty && s.loc === 0) toast('⚠ İşlek taş attın: +101 ceza!', true);
+      }
+    }
+  }
+}
+
+/* süre barı: sunucu deadline'ına göre (yerel sayaç yok) */
+function netTick() {
+  if (!NET.on || !NET.view || !G) return;
+  const v = NET.view;
+  const st = $('seattimer'), sf = $('seatfill');
+  if (G.roundOver || !v.deadline) return;
+  const remain = v.deadline - Date.now();
+  if (remain <= 0) { st.classList.add('hidden'); return; }
+  st.classList.remove('hidden', 'anim');
+  placeSeatTimer(G.turn);
+  sf.style.width = Math.max(0, Math.min(100, remain / (NET.tTotal || 30000) * 100)) + '%';
+  st.classList.toggle('low', remain < 5000);
+}
+
+/* ---- ekranlar ---- */
+function netWaitingModal(m) {
+  NET.modalKind = 'waiting';
+  const rows = m.seats.map((s, i) =>
+    '<div class="wseat' + (s ? '' : ' empty') + '"><span class="dot"></span>' +
+    (s ? (s.ava || '🙂') + ' ' + escapeHtml(s.name) + (i === m.you ? ' (Sen)' : '') : 'Oyuncu aranıyor…') + '</div>').join('');
+  modal('<h2>MASA HAZIRLANIYOR</h2>' +
+    '<p class="reshead">Bahis: <span class="coin">M</span> ' + fmtChips(m.stake || currentStake) + '</p>' +
+    '<div style="display:flex;flex-direction:column;gap:7px">' + rows + '</div>' +
+    '<p class="rules" style="font-size:11.5px;text-align:center">Oyuncular katılıyor — masa dolunca oyun başlar.</p>' +
+    '<div class="btnrow"><button class="btn exit" id="nw-x" style="border-radius:999px;padding:10px 26px">VAZGEÇ</button></div>');
+  $('nw-x').onclick = () => { netSend({ t: 'leave' }); };
+}
+
+/* ---- gerçek lobi: sunucudaki bekleyen masalar (oda aralığına göre) ---- */
+function netLobbyDialog(ri) {
+  const room = ROOMS[ri];
+  NET.modalKind = 'lobby';
+  NET.lobbyRange = [room.min, room.max];
+  modal(roomHeadHtml(ri) +
+    '<div id="lobby-list" style="display:flex;flex-direction:column;gap:7px;max-height:44vh;overflow-y:auto">' +
+    '<p class="rules" style="text-align:center">Masalar yükleniyor…</p></div>' +
+    '<div class="btnrow"><button class="btn secondary" id="lb-new">➕ YENİ MASA AÇ</button><button class="btn" id="lb-x">Kapat</button></div>');
+  bindRoomNav(ri, r => { netLobbyStop(); netLobbyDialog(r); });
+  $('lb-x').onclick = () => { netLobbyStop(); closeModal(); };
+  $('lb-new').onclick = () => { netLobbyStop(); closeModal(); masaAcDialog(ri); };
+  netSend({ t: 'lobby' });
+  NET.lobbyInt = setInterval(() => netSend({ t: 'lobby' }), 3000); // canlı yenilenir
+}
+function netLobbyStop() {
+  clearInterval(NET.lobbyInt);
+  NET.lobbyInt = null;
+  if (NET.modalKind === 'lobby') NET.modalKind = null;
+}
+function netRenderLobby(m) {
+  const list = $('lobby-list');
+  if (NET.modalKind !== 'lobby' || !list) return;
+  const mn = NET.lobbyRange ? NET.lobbyRange[0] : 0, mx = NET.lobbyRange ? NET.lobbyRange[1] : 1e15;
+  const ts = m.tables.filter(t => t.stake >= mn && t.stake <= mx);
+  list.innerHTML = ts.length ? ts.map(t => {
+    const filled = t.seats.filter(Boolean);
+    return '<div class="tablecard"><div class="tinfo">' +
+      '<div class="tname"><span class="coin">M</span> ' + fmtChips(t.stake) + ' · ' + t.rounds + ' EL</div>' +
+      '<div class="tmeta">' + (filled.map(s => (s.ava || '🙂') + ' ' + escapeHtml(s.name)).join(' · ') || 'Boş masa') + ' · ' + (4 - filled.length) + ' boş koltuk</div>' +
+      '<div class="tags"><span class="tag kat">' + (t.katlamali ? 'KATLAMALI' : 'KATLAMASIZ') + '</span>' +
+      (t.esli ? '<span class="tag">🤝 EŞLİ</span>' : '') + (t.rizikolu ? '<span class="tag">⚡ RİZİKOLU</span>' : '') + '</div></div>' +
+      '<button class="btn small" data-tid="' + t.id + '">OTUR</button></div>';
+  }).join('') : '<p class="rules" style="text-align:center">Bu odada bekleyen masa yok.<br>➕ Yeni masa aç — oyuncular sana katılsın!</p>';
+  list.querySelectorAll('[data-tid]').forEach(b => b.onclick = () => {
+    netLobbyStop();
+    closeModal();
+    NET.pendingYard = true;
+    NET.lastJoin = null;
+    netSend({ t: 'join', tableId: b.dataset.tid });
+  });
+}
+
+/* masadaki profile tıklanınca: kart SUNUCUDAN gelir (bot/insan ayrımı yok) */
+function netShowPcard(m) {
+  const c = m.card;
+  const winPct = c.games ? Math.round(c.wins / c.games * 100) : 0;
+  modal('<h2>' + (c.ava || '🙂') + ' ' + escapeHtml(c.name) + '</h2>' +
+    '<div class="dlg-row"><span class="lbl">ÇİP</span><span class="val"><span class="coin">M</span> ' + fmtChips(c.chips) + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">SEVİYE</span><span class="val">' + c.lv + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">OYUN</span><span class="val">' + c.games + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">GALİBİYET</span><span class="val">' + c.wins + ' (%' + winPct + ')</span></div>' +
+    '<div class="dlg-row"><span class="lbl">BAŞLANGIÇ</span><span class="val">' + c.start + '</span></div>' +
+    '<div class="btnrow"><button class="btn" onclick="window.closeModal()">Kapat</button></div>');
+}
+function netRoundEnd(s) {
+  stopTurnTimer();
+  NET.modalKind = 'round';
+  const rows = s.rows.map(r => resRow({
+    crown: r.seat === s.finisher, win: r.seat === s.finisher,
+    ava: avaOf(netRot(r.seat)), me: netRot(r.seat) === 0,
+    name: r.name,
+    sub: (r.roundScore > 0 ? '+' : '') + r.roundScore + ' el puanı',
+    subCls: r.roundScore < 0 ? 'neg' : 'pos',
+    right: r.score, rightSub: 'toplam',
+  })).join('');
+  const head = s.cancelled ? 'Dört oyuncu da çiftten açtı — el sayılmadı.'
+    : s.finisher >= 0 ? '🏁 ' + s.rows.find(r => r.seat === s.finisher).name + ' eli bitirdi' + (s.eldenBitti ? ' — ELDEN!' : '') + (s.withOkey ? ' (okey ile)' : '')
+    : 'Destede taş kalmadı.';
+  modal('<h2>EL SONUCU</h2><p class="reshead">' + head + '</p><div class="reslist">' + rows + '</div>' +
+    '<p class="rules" style="font-size:12px;text-align:center">Yeni el otomatik başlıyor…</p>');
+}
+function netFinal(m) {
+  stopTurnTimer();
+  NET.modalKind = 'final';
+  const rows = m.rows.map(r => resRow({
+    crown: r.rank === 1, win: r.rank === 1,
+    ava: avaOf(netRot(r.seat)), me: netRot(r.seat) === 0,
+    name: r.rank + '. ' + r.name,
+    sub: '🪙 ' + (r.receive ? '+' + fmtChips(r.receive) : '0'),
+    subCls: r.receive > currentStake ? 'neg' : (!r.receive ? 'pos' : ''),
+    right: r.score, rightSub: 'puan',
+  })).join('');
+  const myRow = m.rows.find(r => netRot(r.seat) === 0);
+  modal('<h2>OYUN SONUCU</h2>' +
+    '<p class="reshead">' + (myRow && myRow.rank === 1 ? '🏆 Kazandın!' : (m.rows[0].name + ' kazandı')) +
+    (m.sweep ? ' · <b class="rznote">Tek açan — potun tamamı!</b>' : '') + '</p>' +
+    '<div class="reslist">' + rows + '</div>' +
+    (m.me ? '<p class="rules" style="font-size:12.5px;text-align:center">🌐 Online bakiyen: <b><span class="coin">M</span> ' + fmtChips(m.me.chips) + '</b></p>' : '') +
+    '<div class="btnrow finalbtns"><button class="btn exit" id="nf-x">MASADAN AYRIL</button>' +
+    '<button class="btn go" id="nf-again">YENİ OYUN</button></div>');
+  if (myRow && myRow.receive > 0) setTimeout(() => chipFx(myRow.receive), 400);
+  playSnd(myRow && myRow.rank === 1 ? 'win' : 'lose');
+  if (m.me) { NET.user = m.me; }
+  $('nf-x').onclick = () => { closeModal(); netExit(); };
+  $('nf-again').onclick = () => {
+    closeModal();
+    const j = NET.lastJoin || { stake: currentStake || 1000, rounds: 1, opts: {}, yardimli: true };
+    netJoin(j.stake, j.rounds, j.opts, j.yardimli);
+  };
+}
+function netJoin(stake, rounds, opts, yardimli) {
+  NET.lastJoin = { stake, rounds, opts: opts || {}, yardimli };
+  NET.pendingYard = yardimli !== false;
+  NET.stakeFxDone = false; NET.lastTurnLoc = -1; NET.evQ.length = 0;
+  chatState.msgs = []; chatState.unread = 0; renderChat();
+  netSend(Object.assign({ t: 'join', stake, rounds }, opts || {}));
+}
+function netReady() { return !!(NET.ws && NET.ws.readyState === 1 && NET.user); }
+/* bağlanmayı dene; kısa sürede olmazsa çevrimdışı say */
+function netTry(cb) {
+  if (netReady()) return cb(true);
+  let done = false;
+  netConnect(() => { if (!done) { done = true; cb(true); } });
+  setTimeout(() => { if (!done) { done = true; cb(false); } }, 2500);
+}
+function netExit(msg) {
+  NET.on = false; NET.leaving = false; NET.view = null; NET.modalKind = null;
+  if (NET.tickInt) { clearInterval(NET.tickInt); NET.tickInt = null; }
+  stopTurnTimer();
+  netBanner(null);
+  G = null; ui.busy = false;
+  closeModal();
+  $('scr-game').classList.add('hidden');
+  $('scr-start').classList.remove('hidden');
+  initStart();
+  if (msg) toast(msg, true);
+}
+
+/* açılışta sessizce bağlan: menü sunucu bakiyesini gösterir, OYNA anında eşleşir */
+setTimeout(() => netTry(() => {}), 350);
+window.__net = NET;
 
 /* init */
 initStart();

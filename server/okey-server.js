@@ -53,16 +53,51 @@ function botCard(name, ava) {
   };
 }
 
-/* ---------------- Kalıcı depo (FAZ A: dosya; üretimde PostgreSQL) ---------------- */
+/* ---------------- Kalıcı depo ----------------
+   DATABASE_URL varsa PostgreSQL (Render'ın ücretsiz Postgres'i — kalıcı!):
+   - okey_kv: tüm durumun anlık görüntüsü (users/tokens/sayaçlar)
+   - okey_ledger: her çip hareketi, SADECE EKLENİR (para izi asla kaybolmaz)
+   Yoksa dosya (yerel geliştirme). Postgres düşerse dosyaya geri düşülür. */
 let DB = { users: {}, tokens: {}, ledger: [], seq: 0 };
-try { DB = Object.assign(DB, JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'))); } catch (e) {}
+let pgPool = null;
+async function storeInit() {
+  if (process.env.DATABASE_URL) {
+    try {
+      const { Pool } = require('pg'); // package.json bağımlılığı — Render npm install ile kurar
+      pgPool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+        max: 3,
+      });
+      await pgPool.query('CREATE TABLE IF NOT EXISTS okey_kv (id int PRIMARY KEY, data jsonb)');
+      await pgPool.query('CREATE TABLE IF NOT EXISTS okey_ledger (id bigserial PRIMARY KEY, uid text, delta bigint, reason text, ref text, bal bigint, ts bigint)');
+      const r = await pgPool.query('SELECT data FROM okey_kv WHERE id = 1');
+      if (r.rows[0] && r.rows[0].data) DB = Object.assign(DB, r.rows[0].data);
+      pgPool.on('error', e => console.error('[db] havuz hatası:', e.message));
+      console.log('[db] PostgreSQL bağlı — hesaplar ve çipler KALICI.');
+      return;
+    } catch (e) {
+      console.error('[db] Postgres başlatılamadı, dosya moduna düşüldü:', e.message);
+      pgPool = null;
+    }
+  }
+  try { DB = Object.assign(DB, JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'))); } catch (e) {}
+  console.log('[db] dosya modu (' + DATA_FILE + ') — üretimde DATABASE_URL ekleyin.');
+}
+function persist() {
+  if (pgPool) {
+    // anlık görüntüde ledger'ın sadece kuyruğu taşınır; tam iz okey_ledger tablosundadır
+    const snap = Object.assign({}, DB, { ledger: DB.ledger.slice(-200) });
+    pgPool.query('INSERT INTO okey_kv (id, data) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET data = $1', [snap])
+      .catch(e => console.error('[db] kv yazımı:', e.message));
+  } else {
+    try { fs.writeFileSync(DATA_FILE, JSON.stringify(DB)); } catch (e) { console.error('kayıt hatası', e.message); }
+  }
+}
 let saveT = null;
 function saveSoon() {
   if (saveT) return;
-  saveT = setTimeout(() => {
-    saveT = null;
-    try { fs.writeFileSync(DATA_FILE, JSON.stringify(DB)); } catch (e) { console.error('kayıt hatası', e.message); }
-  }, FAST ? 20 : 400);
+  saveT = setTimeout(() => { saveT = null; persist(); }, FAST ? 20 : 400);
 }
 
 /* Cüzdan: bakiye ASLA doğrudan yazılmaz — her hareket ledger'a işlenir */
@@ -71,7 +106,14 @@ function tx(userId, delta, reason, ref) {
   if (!u) return false;
   if (delta < 0 && u.chips + delta < 0) return false; // yetersiz bakiye
   u.chips += delta;
-  DB.ledger.push({ id: ++DB.seq, uid: userId, delta, reason, ref: ref || null, bal: u.chips, ts: Date.now() });
+  const row = { id: ++DB.seq, uid: userId, delta, reason, ref: ref || null, bal: u.chips, ts: Date.now() };
+  DB.ledger.push(row);
+  if (DB.ledger.length > 5000) DB.ledger.splice(0, DB.ledger.length - 5000); // bellek sınırı
+  if (pgPool) { // tam para izi kalıcı tabloya (sadece-ekle)
+    pgPool.query('INSERT INTO okey_ledger (uid, delta, reason, ref, bal, ts) VALUES ($1,$2,$3,$4,$5,$6)',
+      [row.uid, row.delta, row.reason, row.ref, row.bal, row.ts])
+      .catch(e => console.error('[db] ledger yazımı:', e.message));
+  }
   saveSoon();
   return true;
 }
@@ -95,8 +137,43 @@ function issueToken(userId) {
   saveSoon();
   return t;
 }
+/* ---- günlük bonus + seri (UTC gün) ---- */
+const DAILY_REWARDS = [5000, 10000, 15000, 25000, 40000, 60000, 100000];
+const dayNo = () => Math.floor(Date.now() / 86400000);
+function dailyState(u) {
+  const day = dayNo();
+  const can = (u.dailyDay || 0) < day;
+  const streakIfClaim = (u.dailyDay === day - 1) ? (u.streak || 0) + 1 : 1;
+  return { can, streak: u.streak || 0, streakIfClaim, reward: DAILY_REWARDS[Math.min(streakIfClaim - 1, 6)] };
+}
+/* ---- günlük görevler (her gün sıfırlanır; ilerleme oyun sonunda işlenir) ---- */
+const TASKS_DEF = [
+  { id: 'el3', name: '3 el oyna', goal: 3, odul: 8000 },
+  { id: 'win1', name: '1 oyun kazan', goal: 1, odul: 15000 },
+  { id: 'chip1', name: 'Bir oyundan çip kazan', goal: 1, odul: 10000 },
+];
+function taskBox(u) {
+  const day = dayNo();
+  if (!u.tasks || u.tasks.day !== day) u.tasks = { day, prog: {}, claimed: {} };
+  return u.tasks;
+}
+function taskState(u) {
+  const tb = taskBox(u);
+  return TASKS_DEF.map(t => ({
+    id: t.id, name: t.name, goal: t.goal, odul: t.odul,
+    prog: Math.min(tb.prog[t.id] || 0, t.goal), claimed: !!tb.claimed[t.id],
+  }));
+}
+function taskBump(u, id, n) {
+  const tb = taskBox(u);
+  tb.prog[id] = (tb.prog[id] || 0) + (n || 1);
+}
 function pubUser(u) {
-  return { id: u.id, name: u.name, chips: u.chips, xp: u.xp, games: u.games, wins: u.wins };
+  return {
+    id: u.id, name: u.name, chips: u.chips, xp: u.xp,
+    games: u.games, wins: u.wins, elden: u.elden || 0,
+    daily: dailyState(u), tasks: taskState(u),
+  };
 }
 
 /* ---------------- WebSocket (RFC 6455) ---------------- */
@@ -372,6 +449,10 @@ function roundFlow(tb) {
     rows: g.players.map((p, i) => ({ seat: i, name: p.name, roundScore: p.roundScore, score: p.score })),
     penalties: (g.penaltyLog || []).map(e => ({ seat: e.player, amount: e.amount })),
   };
+  if (g.eldenBitti && g.finisher >= 0) { // elden bitme istatistiği
+    const fs2 = tb.seats[g.finisher];
+    if (fs2 && fs2.userId) { const u = DB.users[fs2.userId]; u.elden = (u.elden || 0) + 1; saveSoon(); }
+  }
   forEachHuman(tb, s => send(s.sock, { t: 'roundEnd', s: summary }));
   if (g.cancelled) { // dört çift açışı: el sayılmaz, tekrar
     setTimeout(() => {
@@ -421,6 +502,9 @@ function settle(tb) {
       const u = DB.users[s.userId];
       u.games++; if (rank === 0) u.wins++;
       u.xp += g.rounds * 25 + [100, 50, 20, 10][rank];
+      taskBump(u, 'el3', g.rounds);              // günlük görev ilerlemeleri
+      if (rank === 0) taskBump(u, 'win1', 1);
+      if (receive > 0) taskBump(u, 'chip1', 1);
       // kopuk oyuncunun tableId'si KALIR: dönünce finali teslim alır
       if (!s.gone) u.tableId = null;
     }
@@ -637,6 +721,36 @@ function handleMessage(client, raw) {
       send(client.sock, { t: 'pcard', seat: m.seat, card });
       break;
     }
+    case 'daily': { // günlük bonus talebi
+      const u = DB.users[client.userId];
+      const d = dailyState(u);
+      if (!d.can) return sendErr(client, 'Bugünün bonusu zaten alındı — yarın yine gel!');
+      u.dailyDay = dayNo();
+      u.streak = d.streakIfClaim;
+      tx(u.id, d.reward, 'bonus', 'gunluk-' + u.streak);
+      send(client.sock, { t: 'daily', ok: true, reward: d.reward, streak: u.streak, user: pubUser(u) });
+      break;
+    }
+    case 'task': { // görev ödülü talebi
+      const u = DB.users[client.userId];
+      const def = TASKS_DEF.find(t => t.id === m.id);
+      const box = taskBox(u);
+      if (!def || box.claimed[def.id]) return sendErr(client, 'Görev bulunamadı ya da alındı.');
+      if ((box.prog[def.id] || 0) < def.goal) return sendErr(client, 'Görev henüz tamamlanmadı.');
+      box.claimed[def.id] = true;
+      tx(u.id, def.odul, 'task', def.id);
+      send(client.sock, { t: 'task', ok: true, id: def.id, odul: def.odul, user: pubUser(u) });
+      break;
+    }
+    case 'top': { // liderlik tablosu
+      const us = Object.values(DB.users).sort((a, b) => b.chips - a.chips);
+      const rows = us.slice(0, 20).map((u, i) => ({
+        rank: i + 1, name: u.name, ava: u.ava || '🙂', chips: u.chips, lv: 1 + Math.floor(u.xp / 250),
+      }));
+      const myRank = us.findIndex(u => u.id === client.userId) + 1;
+      send(client.sock, { t: 'top', rows, myRank, total: us.length });
+      break;
+    }
     case 'fill': { const tb = TABLES.get(client.tableId); if (tb && tb.state === 'waiting') fillAndStart(tb); break; }
     case 'act': handleAction(client, m); break;
     case 'chat': {
@@ -677,6 +791,8 @@ server.on('upgrade', (req, sock) => {
   sock.on('close', () => onDisconnect(client));
   sock.on('error', bye);
 });
-server.listen(PORT, () => {
-  console.log('101 Okey FAZ A sunucusu ayakta: http://localhost:' + PORT + (FAST ? '  [HIZLI TEST MODU]' : ''));
+storeInit().then(() => {
+  server.listen(PORT, () => {
+    console.log('101 Okey sunucusu ayakta: http://localhost:' + PORT + (FAST ? '  [HIZLI TEST MODU]' : ''));
+  });
 });

@@ -69,6 +69,22 @@ Sana yolladığım son zip'in içinde artık bir **`server`** klasörü ve **`pa
 
 ---
 
+## ADIM 5 (FAZ C) — Verileri KALICI yap (çipler bir daha sıfırlanmasın)
+
+Oyun artık PostgreSQL destekliyor. Render'da 5 dakikada kurulur:
+
+1. Render panelinde **New +** → **PostgreSQL** → isim ver → **Free** plan → Create.
+2. Oluşunca veritabanının sayfasında **"Internal Database URL"** değerini kopyala (postgres://... diye başlar).
+3. Oyun sunucunun (Web Service) sayfasına dön → **Environment** sekmesi → **Add Environment Variable**:
+   - Key: `DATABASE_URL`
+   - Value: az önce kopyaladığın adres
+4. Kaydet — Render otomatik yeniden kurar. Loglarda şunu görürsen tamamdır:
+   **`[db] PostgreSQL bağlı — hesaplar ve çipler KALICI.`**
+
+Artık güncelleme atsan da, sunucu uyusa da hesaplar/çipler/seriler durur.
+(Not: Render'ın ücretsiz Postgres'i 90 gün sonra sona erer — yayına yaklaşınca
+küçük bir ücretli plana geçeriz; şimdilik test için ideal.)
+
 ## Sırada ne var
 
 Bu link "arkadaşınla test" için birebir. Gerçek yayına geçerken (herkese açmadan önce) ekleyeceklerimiz:
