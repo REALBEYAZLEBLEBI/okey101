@@ -28,16 +28,17 @@ const OPEN_MS   = FAST ? 4000 : 60000; // açış yapılan turda işleme süresi
 const ROUND_BREAK = FAST ? 250 : 7000; // eller arası bekleme
 
 /* GÖRÜNMEZ BOTLAR: gerçekçi kimlikler — istemciye "bot" bilgisi ASLA gitmez */
-const BOT_IDENTITIES = [
-  ['Mehmet K.', '🧔🏻'], ['Ayşe T.', '👩🏻'], ['Emre D.', '👨🏻'], ['Zeynep A.', '👩🏻‍🦰'],
-  ['Hasan Y.', '👨🏻‍🦳'], ['Elif S.', '👱🏻‍♀️'], ['Burak Ö.', '🧑🏻'], ['Selin M.', '👩🏻‍🦱'],
-  ['Kadir B.', '👨🏽'], ['Merve U.', '👩🏼'], ['Okan Ç.', '👨🏻‍🦱'], ['Derya G.', '🙎🏻‍♀️'],
-  ['Tolga E.', '🧔🏽'], ['Gamze P.', '👩🏽'], ['Serkan H.', '👨🏻‍🦲'], ['Nazlı O.', '💁🏻‍♀️'],
+const BOT_IDENTITIES = [ // [ad, avatar, cinsiyet] — sohbet hitapları cinsiyete göre
+  ['Mehmet K.', '🧔🏻', 'm'], ['Ayşe T.', '👩🏻', 'f'], ['Emre D.', '👨🏻', 'm'], ['Zeynep A.', '👩🏻‍🦰', 'f'],
+  ['Hasan Y.', '👨🏻‍🦳', 'm'], ['Elif S.', '👱🏻‍♀️', 'f'], ['Burak Ö.', '🧑🏻', 'm'], ['Selin M.', '👩🏻‍🦱', 'f'],
+  ['Kadir B.', '👨🏽', 'm'], ['Merve U.', '👩🏼', 'f'], ['Okan Ç.', '👨🏻‍🦱', 'm'], ['Derya G.', '🙎🏻‍♀️', 'f'],
+  ['Tolga E.', '🧔🏽', 'm'], ['Gamze P.', '👩🏽', 'f'], ['Serkan H.', '👨🏻‍🦲', 'm'], ['Nazlı O.', '💁🏻‍♀️', 'f'],
 ];
-const BOT_CHAT = {
-  open: ['Açtım 😎', 'Ben açıldım', 'Hadi hayırlısı', 'İşte bu 👌'],
-  finish: ['Bitti! 🎉', 'Güzel eldi, eyvallah 👏', 'Sağlık olsun'],
-  idle: ['Taşlar hiç gelmiyor ya 😩', 'Çay tazeleyin ☕', 'Bu gösterge de bir şey değil 😅', 'Kolay gelsin herkese 🙂'],
+const BOT_CHAT = { // kısa, sokak ağzı — gerçek oyuncular az ve öz yazar
+  open: ['açtım', 'hadi hayırlısı', 'geldi sıra bize 😎', 'nihayet ya'],
+  finish: ['gg', 'eyv 👏', 'sağlık olsun', 'güzel eldi'],
+  idle: ['taş gelmiyor ya', 'çayları tazeleyin ☕', 'kolay gelsin', 'hızlı oynayalım arkadaşlar'],
+  ask: ['el nasıl ortak?', 'açar mı el?', 'kaç sayın var?', 'durum ne ortak'],
 };
 function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
 /* bota isme bağlı SABİT temsili profil (kart açılınca hep aynı görünür) */
@@ -242,8 +243,8 @@ function botArrive(tb) {
   const seat = tb.seats.findIndex(s => !s);
   if (seat < 0) return startTable(tb);
   const used = new Set(tb.seats.filter(s => s && s.bot).map(s => s.name));
-  const id = BOT_IDENTITIES.find(x => !used.has(x[0])) || ['Misafir ' + seat, '🙂'];
-  tb.seats[seat] = { bot: true, name: id[0], ava: id[1] };
+  const id = BOT_IDENTITIES.find(x => !used.has(x[0])) || ['Misafir ' + seat, '🙂', 'm'];
+  tb.seats[seat] = { bot: true, name: id[0], ava: id[1], gender: id[2] };
   broadcastWaiting(tb);
   if (tb.seats.every(s => s)) {
     tb.fillT = setTimeout(() => startTable(tb), FAST ? 60 : 900 + Math.random() * 900);
@@ -273,8 +274,12 @@ function joinTable(client, stake, rounds, opts, tableId) {
     if (u.chips < tb.stake) return sendErr(client, 'Bu masa için bakiyen yetersiz.');
   } else {
     if (u.chips < stake) return sendErr(client, 'Yetersiz bakiye.');
-    tb = [...TABLES.values()].find(t =>
-      t.state === 'waiting' && t.stake === stake && sameOpts(t, rounds, opts) && t.seats.some(s => !s));
+    // en dolu masaya gönder: önce en çok GERÇEK oyunculu, sonra en dolu
+    const cands = [...TABLES.values()].filter(t =>
+      t.state === 'waiting' && t.stake === stake && sameOpts(t, rounds, opts) && t.seats.some(s => !s || s.bot));
+    cands.sort((a, b) => humanSeats(b).length - humanSeats(a).length ||
+      b.seats.filter(Boolean).length - a.seats.filter(Boolean).length);
+    tb = cands[0];
     if (!tb) tb = newTable(stake, rounds, opts);
   }
   let seat = tb.seats.findIndex(s => !s);
@@ -309,8 +314,8 @@ function fillAndStart(tb) {
   while (tb.seats.some(s => !s)) {
     const seat = tb.seats.findIndex(s => !s);
     const used = new Set(tb.seats.filter(s => s && s.bot).map(s => s.name));
-    const id = BOT_IDENTITIES.find(x => !used.has(x[0])) || ['Misafir ' + seat, '🙂'];
-    tb.seats[seat] = { bot: true, name: id[0], ava: id[1] };
+    const id = BOT_IDENTITIES.find(x => !used.has(x[0])) || ['Misafir ' + seat, '🙂', 'm'];
+    tb.seats[seat] = { bot: true, name: id[0], ava: id[1], gender: id[2] };
   }
   startTable(tb);
 }
@@ -383,13 +388,17 @@ function scheduleTurn(tb) {
   if (!g || g.roundOver || tb.state !== 'playing') return;
   if (isBotTurnSeat(tb, g.turn)) {
     tb.deadline = 0;
+    tb.turnSeat = g.turn;
     // insansı tempo: 1.2-3.4 sn düşünme, ara sıra daha uzun "dalma"
     const think = BOT_MS || (1200 + Math.random() * 2200 + (Math.random() < 0.12 ? 2500 : 0));
     tb.turnT = setTimeout(() => botMove(tb), think);
   } else {
-    tb.deadline = Date.now() + TURN_MS;
-    tb.turnT = setTimeout(() => timeoutPlay(tb), TURN_MS + 500);
-    broadcastState(tb); // deadline herkese gitsin (süre barları)
+    // KESİNTİSİZ tek sayaç: aynı oyuncunun turu sürerken (çekiş→atış) süre TAZELENMEZ
+    const fresh = tb.turnSeat !== g.turn || !tb.deadline || tb.deadline <= Date.now();
+    if (fresh) tb.deadline = Date.now() + TURN_MS;
+    tb.turnSeat = g.turn;
+    tb.turnT = setTimeout(() => timeoutPlay(tb), Math.max(500, tb.deadline - Date.now()) + 500);
+    if (fresh) broadcastState(tb); // yeni deadline herkese gitsin (süre barları)
   }
 }
 function botMove(tb) {
@@ -401,21 +410,47 @@ function botMove(tb) {
   botChatter(tb, seat, events);
   afterAction(tb);
 }
-/* botlar ara sıra insan gibi konuşur (sadece bot koltuklarında) */
+/* botlar ara sıra insan gibi konuşur: kısa, seyrek, gerçekçi */
 function botChatter(tb, seat, events) {
   if (FAST) return;
   const s = tb.seats[seat];
-  if (!s || !s.bot) return;
-  let line = null;
-  for (const e of events) {
-    if ((e.type === 'open' || e.type === 'openPairs') && Math.random() < 0.5) line = pick(BOT_CHAT.open);
-    else if (e.type === 'discard' && e.finished) line = pick(BOT_CHAT.finish);
+  const say = (si, text, delay) => setTimeout(() => {
+    const sp = tb.seats[si];
+    if (tb.state !== 'done' && sp && sp.bot) forEachHuman(tb, h => send(h.sock, { t: 'chat', seat: si, from: sp.name, text }));
+  }, delay);
+  // hamleyi yapan botun kendi tepkisi
+  if (s && s.bot) {
+    for (const e of events) {
+      if ((e.type === 'open' || e.type === 'openPairs') && Math.random() < 0.3) say(seat, pick(BOT_CHAT.open), 900 + Math.random() * 1500);
+      else if (e.type === 'discard' && e.finished) say(seat, pick(BOT_CHAT.finish), 700 + Math.random() * 900);
+    }
+    if (Math.random() < 0.025) say(seat, pick(BOT_CHAT.idle), 600 + Math.random() * 1800);
   }
-  if (!line && Math.random() < 0.04) line = pick(BOT_CHAT.idle);
-  if (line) {
-    setTimeout(() => {
-      if (tb.state !== 'done') forEachHuman(tb, h => send(h.sock, { t: 'chat', seat, from: s.name, text: line }));
-    }, 600 + Math.random() * 1800);
+  // açan oyuncuyu (insan/bot) başka bir bot kutlar — kadın oyuncuya isimle hitap
+  for (const e of events) {
+    if ((e.type === 'open' || e.type === 'openPairs') && Math.random() < 0.2) {
+      const bots = [0, 1, 2, 3].filter(i => i !== seat && tb.seats[i] && tb.seats[i].bot);
+      if (!bots.length) continue;
+      const nm = s && s.name ? s.name.split(' ')[0] : '';
+      const fem = s && s.gender === 'f';
+      say(pick(bots), pick(fem
+        ? ['eline sağlık ' + nm + ' hanım', 'güzel açış ' + nm + ' hanım 👏', 'maşallah ' + nm + ' hanım']
+        : ['eline sağlık', 'güzel açış 👏', 'oo maşallah']), 1600 + Math.random() * 2200);
+    }
+  }
+  // eşli masada ortaklar konuşur: soru + elin GERÇEK durumuna göre cevap
+  if (tb.opts.esli && s && s.bot && tb.g && Math.random() < 0.09) {
+    const pi = (seat + 2) % 4, ps = tb.seats[pi];
+    say(seat, pick(BOT_CHAT.ask), 800 + Math.random() * 1200);
+    if (ps && ps.bot) {
+      const pp = tb.g.players[pi];
+      const pts = E.bestMeldCover(pp.hand, tb.g.okey).points;
+      const reply = pp.opened ? pick(['açtım zaten ortak, sen düşün 😄', 'ben açtım, sıra sende'])
+        : pts >= 80 ? pick([pts + ' var, geliyorum', 'hazır gibiyim', 'açarım birazdan'])
+        : pts >= 40 ? pick([pts + ' var, az kaldı', 'toparlıyorum yavaş yavaş'])
+        : pick(['daha bir şey yok', 'zor bu el ya', 'bende iş yok şimdilik']);
+      say(pi, reply, 3200 + Math.random() * 2400);
+    }
   }
 }
 function timeoutPlay(tb) {
@@ -593,12 +628,6 @@ function handleAction(client, m) {
     case 'undo': r = E.undoOpen(g); break;
   }
   if (!r.ok) return sendErr(client, r.err || 'Hamle geçersiz.');
-  // işlem yapan insana ek süre: 30 sn baştan (açış turu 60 sn zaten kurulu)
-  if (['lay', 'layPair', 'attach', 'swap'].includes(m.a) && tb.deadline) {
-    tb.deadline = Date.now() + TURN_MS;
-    clearTimeout(tb.turnT);
-    tb.turnT = setTimeout(() => timeoutPlay(tb), TURN_MS + 500);
-  }
   if (evs) broadcastEvents(tb, seat, evs);
   afterAction(tb);
 }

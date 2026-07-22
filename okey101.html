@@ -216,33 +216,44 @@ body {
   75% { opacity: 1; }
   100% { opacity: 0; transform: translate(-50%,48px) scale(.9); }
 }
-/* çip mağazası */
-.shopgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-@media (max-width: 430px) { .shopgrid { grid-template-columns: repeat(2, 1fr); } }
+/* çip mağazası (referans düzen: büyük paket solda, çip kuleleri, altın fiyat butonu) */
+.shopgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 520px) { .shopgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pack.big { grid-row: auto; } }
 .pack {
-  position: relative; text-align: center; padding: 14px 6px 8px; border-radius: 13px;
+  position: relative; text-align: center; padding: 11px 4px 7px; border-radius: 13px;
   background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
   border: 1px solid rgba(255,255,255,.14);
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 4px;
 }
 .pack.feat {
   border-color: rgba(255,213,79,.55);
   background: linear-gradient(180deg, rgba(255,196,60,.14), rgba(255,255,255,.03));
   box-shadow: 0 0 14px rgba(255,180,40,.25), inset 0 1px 0 rgba(255,255,255,.12);
 }
+.pack.big { grid-row: span 2; }
+.pack.free { border-style: dashed; border-color: rgba(123,215,92,.5); }
 .pbadge {
   position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
   font-size: 9.5px; font-weight: 900; letter-spacing: .5px; white-space: nowrap;
   padding: 2px 8px; border-radius: 999px; color: #4a2800;
   background: linear-gradient(180deg, #ffe082, #ffb300); border: 1px solid #b26a00;
-  box-shadow: 0 2px 4px rgba(0,0,0,.4);
+  box-shadow: 0 2px 4px rgba(0,0,0,.4); z-index: 2;
 }
-.pico { font-size: 19px; display: flex; }
-.pico .coin { margin-left: -7px; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.55), -2px 1px 3px rgba(0,0,0,.45); }
-.pico .coin:first-child { margin-left: 0; }
-.pchips { font-size: 14.5px; font-weight: 900; color: var(--gold); }
-.pbonus { font-size: 10px; font-weight: 800; color: #7bd75c; min-height: 13px; }
-.pbuy { width: 100%; padding: 7px 4px; font-size: 12.5px; }
+.pbadge.hot { background: linear-gradient(180deg, #ff8a80, #e53935); color: #fff; border-color: #8e1410; }
+.pamt { font-size: 13.5px; font-weight: 900; color: #fff; text-shadow: 0 1px 2px #000; letter-spacing: .3px; }
+.pack.big .pamt { font-size: 17px; color: var(--gold); }
+.pile { display: flex; flex-direction: column; align-items: center; font-size: 15px; }
+.pack.big .pile { font-size: 19px; padding: 5px 0; }
+.prow { display: flex; margin-top: -6px; }
+.prow:first-child { margin-top: 0; }
+.pile .coin { margin-left: -5px; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.55), -2px 1px 3px rgba(0,0,0,.45); }
+.prow .coin:first-child { margin-left: 0; }
+.pbonus { font-size: 10px; font-weight: 800; color: #7bd75c; min-height: 12px; }
+.pbuy {
+  width: 100%; padding: 6px 2px; font-size: 11.5px; white-space: nowrap; letter-spacing: 0; font-weight: 900;
+  background: linear-gradient(180deg, #ffe082, #ffb300 60%, #ff9800); border-color: #b26a00 !important; color: #4a2800;
+  text-shadow: 0 1px 0 rgba(255,255,255,.4);
+}
 /* ayarlar bölüm başlığı */
 .setsec {
   font-size: 13px; font-weight: 900; letter-spacing: 1.5px; color: var(--gold);
@@ -412,12 +423,12 @@ input[type="range"].bahis {
 /* ================= Game layout ================= */
 #scr-game {
   display: grid; grid-template-rows: auto 1fr auto auto auto auto;
-  /* iPhone çentik/Dynamic Island: oyun güvenli alana çekilir */
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  /* iPhone çentik/Dynamic Island: güvenli alanın %72'si yeter — yanlar boşa harcanmaz */
+  padding-left: calc(env(safe-area-inset-left, 0px) * 0.72);
+  padding-right: calc(env(safe-area-inset-right, 0px) * 0.72);
   padding-top: env(safe-area-inset-top);
 }
-#topbar { padding-left: calc(10px + env(safe-area-inset-left)) !important; padding-right: calc(10px + env(safe-area-inset-right)) !important; }
+#topbar { padding-left: calc(8px + env(safe-area-inset-left, 0px) * 0.72) !important; padding-right: calc(8px + env(safe-area-inset-right, 0px) * 0.72) !important; }
 /* masa bahsi: büyük, canlı altın rozet */
 #chips-top {
   display: inline-flex; align-items: center; gap: 6px;
@@ -640,6 +651,10 @@ input[type="range"].bahis {
 }
 .sideplate .badge.pairs { background: linear-gradient(180deg,#e5b3ee,#b96cc9); color: #3d1145; }
 .sideplate.turn { border-color: var(--gold); box-shadow: 0 0 0 1.5px var(--gold), 0 0 18px rgba(255,213,79,.5), 0 5px 12px rgba(0,0,0,.5); }
+/* masada oyuncu bekleme: boş koltuk yavaşça yanıp söner */
+.waitseat { opacity: .62; }
+.waitseat .ava { animation: waitpulse 1.3s ease-in-out infinite; }
+@keyframes waitpulse { 50% { transform: scale(1.14); opacity: .55; } }
 
 /* ---- the two boards: SERİ (left) + ÇİFT (right), hub column between ---- */
 #boards {
@@ -1026,9 +1041,9 @@ input[type="range"].bahis {
 @media (max-height: 620px) and (orientation: landscape) {
   /* ıstaka taşları GENİŞLİĞE göre büyür: yan boşluklar dolsun (iPhone 16'da ~31px) */
   :root {
-    --tile-w: clamp(19px, 4vh, 40px);
-    --rack-tile: clamp(20px, calc((100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 248px) / 16), 40px);
-    --hubtile: clamp(20px, 5vh, 34px);
+    --tile-w: clamp(26px, 6.4vh, 40px); /* köşe ıskartaları rahat okunur */
+    --rack-tile: clamp(20px, calc((100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 240px) / 16), 40px);
+    --hubtile: clamp(30px, 8.6vh, 44px); /* gösterge + deste: BÜYÜK, rahat dokunulur */
   }
   /* ortadaki açılan perler küçülür ki iki sütun rahat sığsın */
   .tile.mini { --tile-w: clamp(13px, 3.4vh, 22px); }
@@ -1047,8 +1062,9 @@ input[type="range"].bahis {
   .seat .nm, .sideplate .nm { font-size: 10.5px; }
   .sideplate { width: 36px; padding: 4px 2px 6px; gap: 4px; }
   .sideplate.left { left: 3px; } .sideplate.right { right: 3px; }
+  .sideplate .ptrowwrap { display: none; } /* kısa ekranda plaka taşmasın — puan profil kartında */
   .ptile { width: 12px; height: 17px; font-size: 11px; border-radius: 3px; }
-  #boards { top: 33px; bottom: 31px; left: 52px; right: 52px; gap: 5px; }
+  #boards { top: 33px; bottom: 31px; left: 45px; right: 45px; gap: 5px; }
   .board { padding: 4px 4px; border-radius: 9px; }
   #hubcol { gap: 4px; }
   #tableinfo { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 3px; }
@@ -1069,16 +1085,18 @@ input[type="range"].bahis {
   #counter { top: -27px; right: 2px; padding: 3px 4px; }
   #counter .dig { width: 12px; height: 17px; }
   #counter .dig span { font-size: 11px; line-height: 17px; }
-  /* mağaza: 6 sütun, her şey (Kapat dahil) tek ekrana sığar */
+  /* mağaza: her şey (Kapat dahil) tek ekrana sığar */
   #modal { padding: 8px; }
   #modal .box { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
-  .shopgrid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
-  .pack { padding: 10px 3px 6px; gap: 2px; border-radius: 10px; }
-  .pico { font-size: 15px; }
-  .pchips { font-size: 11px; }
-  .pbonus { font-size: 8.5px; min-height: 10px; }
+  .shopgrid { gap: 5px; }
+  .pack { padding: 7px 3px 5px; gap: 2px; border-radius: 10px; }
+  .pamt { font-size: 11px; }
+  .pack.big .pamt { font-size: 13px; }
+  .pile { font-size: 11px; }
+  .pack.big .pile { font-size: 13px; padding: 2px 0; }
+  .pbonus { font-size: 8px; min-height: 9px; }
   .pbuy { padding: 4px 2px; font-size: 10px; }
-  .pbadge { font-size: 8px; padding: 1px 6px; top: -7px; }
+  .pbadge { font-size: 7.5px; padding: 1px 5px; top: -6px; }
   .modecard { width: clamp(160px, 24vw, 210px); }
   .mc-art { min-height: 52px; }
   #event-col { width: 128px; }
@@ -2484,19 +2502,28 @@ const PACKS = [
   { id: 'cip_15m',   chips: 15000000, tl: '1.499,99', ico: 4, bonus: '%50', tag: 'VIP' },
 ];
 function showShop() {
-  const cards = PACKS.map((p, i) =>
-    '<div class="pack' + (p.tag ? ' feat' : '') + '">' +
-    (p.tag ? '<div class="pbadge">' + p.tag + '</div>' : '') +
-    '<div class="pico">' + '<span class="coin">M</span>'.repeat(p.ico) + '</div>' +
-    '<div class="pchips">' + fmtChips(p.chips) + '</div>' +
-    '<div class="pbonus">' + (p.bonus ? '+' + p.bonus + ' bonus dahil' : '&nbsp;') + '</div>' +
-    '<button class="btn small pbuy" data-pk="' + i + '">₺ ' + p.tl + '</button></div>').join('');
+  /* referans düzen: en büyük paket solda boydan boya, diğerleri çip kuleleriyle */
+  const order = ['cip_15m', 'cip_7m', 'cip_3m25', 'cip_1m2', 'cip_550k', 'cip_100k'];
+  const cards = order.map(id => {
+    const i = PACKS.findIndex(x => x.id === id), p = PACKS[i];
+    const big = id === 'cip_15m';
+    const pile = Array.from({ length: p.ico }, (_, r) => '<div class="prow">' + '<span class="coin">M</span>'.repeat(r + 1) + '</div>').join('');
+    return '<div class="pack' + (p.tag ? ' feat' : '') + (big ? ' big' : '') + '">' +
+      (p.tag ? '<div class="pbadge' + (p.tag === 'EN İYİ FİYAT' ? ' hot' : '') + '">' + (big ? 'AVANTAJLI PAKET' : p.tag) + '</div>' : '') +
+      '<div class="pamt">' + fmtChips(p.chips) + '</div>' +
+      '<div class="pile">' + pile + '</div>' +
+      '<div class="pbonus">' + (p.bonus ? '+' + p.bonus + ' bonus' : '&nbsp;') + '</div>' +
+      '<button class="btn small pbuy" data-pk="' + i + '">₺ ' + p.tl + '</button></div>';
+  }).join('') +
+  '<div class="pack free"><div class="pamt">ÜCRETSİZ</div><div class="pile" style="font-size:21px">🎁</div>' +
+  '<div class="pbonus">günlük bonus</div><button class="btn small pbuy" id="shop-free">HEDİYE AL</button></div>';
   modal('<h2><span class="coin">M</span> ÇİP MAĞAZASI</h2>' +
     '<p class="reshead">Bakiyen: <span class="coin">M</span> <b>' + fmtChips(walletChips()) + '</b></p>' +
     '<div class="shopgrid">' + cards + '</div>' +
-    '<p class="rules" style="font-size:11px;text-align:center">⚠ <b>DEMO mağaza</b> — gerçek ödeme alınmaz. Yayında Google Play / App Store faturalandırması buraya bağlanır.<br>Çipler yalnızca oyun içindir, paraya çevrilemez.</p>' +
+    '<p class="rules" style="font-size:10.5px;text-align:center">⚠ <b>DEMO mağaza</b> — gerçek ödeme alınmaz; yayında Play/App Store faturalandırması bağlanır. Çipler paraya çevrilemez.</p>' +
     '<div class="btnrow"><button class="btn" onclick="window.closeModal()">Kapat</button></div>');
-  document.querySelectorAll('#modal-box .pbuy').forEach(b => b.onclick = () => buyPack(+b.dataset.pk));
+  document.querySelectorAll('#modal-box .pbuy[data-pk]').forEach(b => b.onclick = () => buyPack(+b.dataset.pk));
+  $('shop-free').onclick = () => { closeModal(); $('banner-gift').click(); };
 }
 function buyPack(i) {
   const p = PACKS[i];
@@ -2963,31 +2990,22 @@ function analyzeRack() {
 }
 
 /* ---------------- messages ---------------- */
-let toastTimer = null;
+let toastTimer = null, toastUntil = 0;
 function toast(msg, isErr) {
   const bar = $('msgbar');
   bar.textContent = msg;
   bar.classList.toggle('err', !!isErr);
   clearTimeout(toastTimer);
-  if (isErr) toastTimer = setTimeout(() => { bar.classList.remove('err'); renderHint(); }, 3000);
+  toastUntil = Date.now() + (isErr ? 3000 : 2600);
+  toastTimer = setTimeout(() => { bar.classList.remove('err'); toastUntil = 0; renderHint(); }, isErr ? 3000 : 2600);
 }
 function renderHint() {
+  /* ipucu/uyarı yazıları kaldırıldı — temiz masa (referans oyunlar gibi).
+     Bilgi zaten görselde: sıra vurgusu, süre barı, İŞLEK halkası, sayaç. */
   if (!G || G.roundOver) return;
+  if (Date.now() < toastUntil) return; // kısa duyurular (açış vb.) render'a yenilmesin
   const bar = $('msgbar');
   bar.classList.remove('err');
-  if (G.turn !== 0) { bar.textContent = ''; return; } // "X oynuyor" yazısı kaldırıldı — süre barı koltukta
-  const p = me();
-  if (!G.hasDrawn) { bar.textContent = 'Sıra sende: desteden ya da soldaki atılandan taş sürükle (dokunmak da olur).'; return; }
-  if (p.tookDiscard != null) { bar.textContent = 'Aldığın taşı bu tur kullanmalısın — ya da geri sürükleyip desteden çek.'; return; }
-  if (!assist()) { bar.textContent = 'Yardımsız mod: ipucu yok — perlerini boşluklarla ayır, sıra sende oyna.'; return; }
-  const a = analyzeRack();
-  if (a.islekIds.size) { bar.textContent = '⚠ Kırmızı halkalı taşlar İŞLEK: atarsan +101 ceza! ' + (p.opened ? 'İŞLE ile masaya koy.' : ''); return; }
-  if (!p.opened) {
-    const rq = E.openReq(G).seri;
-    if (a.meldPts > 0 && a.meldPts < rq) { bar.textContent = 'Geçerli perlerin: ' + a.meldPts + ' sayı. Açmak için ' + rq + ' gerekir' + (rq > 101 ? ' (katlamalı baraj)' : '') + '.'; return; }
-    bar.textContent = 'Perlerini boşluklarla ayır; yeterse SERİ AÇ. Gruba uzun bas: birlikte taşınır.';
-    return;
-  }
   bar.textContent = '';
 }
 
@@ -3078,6 +3096,7 @@ function renderSeats() {
   for (let i = 0; i < 4; i++) {
     const p = G.players[i];
     const el = $('seat-' + i);
+    el.classList.remove('waitseat');
     el.classList.toggle('turn', G.turn === i && !G.roundOver);
     el.innerHTML = '';
     const ava = document.createElement('div');
@@ -4773,6 +4792,7 @@ function gFromView(v) {
 function netApplyState(v) {
   const prevIds = (NET.on && G && G.online) ? new Set(G.players[0].hand.map(t => t.id)) : null;
   const newRound = !G || !G.online || G.round !== v.round;
+  const prevOpen = (!newRound && G) ? G.players.map(p => p.opened) : null;
   NET.view = v;
   NET.seat = v.seat;
   if (v.deadline !== NET.lastDeadline) {
@@ -4794,6 +4814,12 @@ function netApplyState(v) {
   } else if (prevIds) {
     const added = me().hand.filter(t => !prevIds.has(t.id));
     if (added.length === 1 && G.turn === 0 && G.hasDrawn) ui.drawnId = added[0].id;
+  }
+  if (prevOpen) { // açış duyurusu: "Ayşe T. 112 sayılık SERİ açtı" (referans oyunlardaki gibi)
+    for (let i = 1; i < 4; i++) {
+      const p = G.players[i];
+      if (p.opened && !prevOpen[i]) toast('📢 ' + p.name + ' ' + p.openPoints + ' sayılık ' + (p.openType === 'pairs' ? 'ÇİFT' : 'SERİ') + ' açtı');
+    }
   }
   $('scr-start').classList.add('hidden');
   $('scr-game').classList.remove('hidden');
@@ -4858,16 +4884,29 @@ function netTick() {
 
 /* ---- ekranlar ---- */
 function netWaitingModal(m) {
+  /* pencere yok: doğrudan MASAYA otururuz, oyuncular koltuklara geldikçe görünür */
   NET.modalKind = 'waiting';
-  const rows = m.seats.map((s, i) =>
-    '<div class="wseat' + (s ? '' : ' empty') + '"><span class="dot"></span>' +
-    (s ? (s.ava || '🙂') + ' ' + escapeHtml(s.name) + (i === m.you ? ' (Sen)' : '') : 'Oyuncu aranıyor…') + '</div>').join('');
-  modal('<h2>MASA HAZIRLANIYOR</h2>' +
-    '<p class="reshead">Bahis: <span class="coin">M</span> ' + fmtChips(m.stake || currentStake) + '</p>' +
-    '<div style="display:flex;flex-direction:column;gap:7px">' + rows + '</div>' +
-    '<p class="rules" style="font-size:11.5px;text-align:center">Oyuncular katılıyor — masa dolunca oyun başlar.</p>' +
-    '<div class="btnrow"><button class="btn exit" id="nw-x" style="border-radius:999px;padding:10px 26px">VAZGEÇ</button></div>');
-  $('nw-x').onclick = () => { netSend({ t: 'leave' }); };
+  closeModal();
+  $('scr-start').classList.add('hidden');
+  $('scr-game').classList.remove('hidden');
+  ['board-seri', 'board-cift', 'rack', 'actions', 'tableinfo', 'deck', 'indicator'].forEach(id => { const e = $(id); if (e) e.innerHTML = ''; });
+  $('counter').classList.add('hidden');
+  $('seattimer').classList.add('hidden');
+  document.querySelectorAll('.rackside').forEach(b => b.classList.add('hidden'));
+  const n = m.seats.filter(Boolean).length;
+  for (let loc = 0; loc < 4; loc++) {
+    const s = m.seats[(loc + m.you) % 4];
+    const el = $('seat-' + loc);
+    el.classList.remove('turn');
+    el.onclick = null;
+    el.classList.toggle('waitseat', !s);
+    el.innerHTML = '<div class="ava">' + (s ? (s.ava || '🙂') : '⏳') + '</div>' +
+      '<div class="' + ((loc === 1 || loc === 3) ? 'vinfo' : 'info') + '"><span class="nm">' +
+      (s ? escapeHtml(s.name) : 'Bekleniyor…') + '</span></div>';
+  }
+  $('msgbar').textContent = 'Oyuncular masaya oturuyor… (' + n + '/4)';
+  $('actions').innerHTML = '<button class="btn small exit" id="nw-x">✕ MASADAN KALK</button>';
+  $('nw-x').onclick = () => netSend({ t: 'leave' });
 }
 
 /* ---- gerçek lobi: sunucudaki bekleyen masalar (oda aralığına göre) ---- */
