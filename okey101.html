@@ -410,7 +410,14 @@ input[type="range"].bahis {
 }
 
 /* ================= Game layout ================= */
-#scr-game { display: grid; grid-template-rows: auto 1fr auto auto auto auto; }
+#scr-game {
+  display: grid; grid-template-rows: auto 1fr auto auto auto auto;
+  /* iPhone çentik/Dynamic Island: oyun güvenli alana çekilir */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-top: env(safe-area-inset-top);
+}
+#topbar { padding-left: calc(10px + env(safe-area-inset-left)) !important; padding-right: calc(10px + env(safe-area-inset-right)) !important; }
 /* masa bahsi: büyük, canlı altın rozet */
 #chips-top {
   display: inline-flex; align-items: center; gap: 6px;
@@ -660,6 +667,7 @@ input[type="range"].bahis {
   box-shadow: inset 0 3px 9px rgba(0,0,0,.55), inset 0 0 0 1.5px rgba(255,214,130,.18);
 }
 #hubcol .tile:not(.mini) { --tile-w: var(--hubtile); }
+#hubrow { display: flex; gap: 8px; align-items: center; justify-content: center; } /* gösterge + deste yan yana: hub kısalır */
 /* kalan taş sayısı: destenin içine kabartma/oyma gibi işlenir */
 #deck .cnt {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -705,11 +713,17 @@ input[type="range"].bahis {
   #board-cift { display: flex; flex-wrap: wrap; align-content: flex-start; }
 }
 
-/* tüm perler tek düzenli akışta: başlangıç sayısına göre sıralı, sıkı diziliş */
+/* tüm perler sıralı akışta; SERİ panosu ortadan çizgiyle İKİ SÜTUNA bölünür */
 .meldrow {
   display: flex; flex-wrap: wrap; gap: 7px 8px; align-items: flex-start;
   padding: 3px 3px 5px; border-bottom: none;
 }
+#board-seri .meldrow {
+  display: block;
+  column-count: 2; column-gap: 10px;
+  column-rule: 1px dashed rgba(255,255,255,.18);
+}
+#board-seri .meld { display: inline-flex; margin: 0 5px 7px 0; break-inside: avoid; vertical-align: top; }
 .meldrow:last-child { border-bottom: none; }
 .meld {
   display: flex; gap: 2px; padding: 4px 4px 3px; border-radius: 8px;
@@ -1010,7 +1024,17 @@ input[type="range"].bahis {
 
 /* yatay telefon: kompakt düzen */
 @media (max-height: 620px) and (orientation: landscape) {
-  :root { --tile-w: clamp(19px, 4vh, 40px); --rack-tile: clamp(19px, 4.4vh, 42px); --hubtile: clamp(21px, 5.4vh, 36px); }
+  /* ıstaka taşları GENİŞLİĞE göre büyür: yan boşluklar dolsun (iPhone 16'da ~31px) */
+  :root {
+    --tile-w: clamp(19px, 4vh, 40px);
+    --rack-tile: clamp(20px, calc((100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 248px) / 16), 40px);
+    --hubtile: clamp(20px, 5vh, 34px);
+  }
+  /* ortadaki açılan perler küçülür ki iki sütun rahat sığsın */
+  .tile.mini { --tile-w: clamp(13px, 3.4vh, 22px); }
+  .meld { padding: 2px 2px 2px; gap: 1px; border-radius: 6px; }
+  #board-seri .meld { margin: 0 3px 5px 0; }
+  .meldrow { gap: 4px 5px; padding: 2px 2px 4px; }
   .seat .ava, .sideplate .ava { width: 21px; height: 21px; font-size: 12px; }
   #table { margin: 2px 3px 0; padding: 5px; border-radius: 12px; }
   #felt { inset: 5px; border-radius: 9px; }
@@ -1021,25 +1045,40 @@ input[type="range"].bahis {
   .seat { padding: 2px 8px 2px 3px; gap: 5px; }
   .seat.top { top: 3px; } .seat.bottom { bottom: 2px; }
   .seat .nm, .sideplate .nm { font-size: 10.5px; }
-  .sideplate { width: 33px; padding: 4px 2px 5px; gap: 4px; }
+  .sideplate { width: 36px; padding: 4px 2px 6px; gap: 4px; }
   .sideplate.left { left: 3px; } .sideplate.right { right: 3px; }
   .ptile { width: 12px; height: 17px; font-size: 11px; border-radius: 3px; }
-  #boards { top: 36px; bottom: 34px; left: 58px; right: 58px; gap: 5px; }
-  .board { padding: 5px 4px; border-radius: 9px; }
-  #hubcol { gap: 6px; }
+  #boards { top: 33px; bottom: 31px; left: 52px; right: 52px; gap: 5px; }
+  .board { padding: 4px 4px; border-radius: 9px; }
+  #hubcol { gap: 4px; }
+  #tableinfo { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 3px; }
+  #tableinfo .ti { font-size: 8px; padding: 1px 5px; }
   #topbar { padding: 2px 8px; font-size: 11.5px; gap: 6px; }
   #topbar .btn.small { padding: 4px 8px; font-size: 11px; }
-  #msgbar { min-height: 18px; font-size: 11.5px; padding: 1px 8px; }
-  #actions { padding: 3px 6px 4px; gap: 5px; }
-  #actions .btn.small { padding: 6px 10px; font-size: 12px; }
-  #rackwrap { padding: 5px 6px calc(5px + env(safe-area-inset-bottom)); }
-  #racktray { padding: 7px 14px 8px; }
-  .lip.l1 { top: calc(7px + var(--rh) - 4px); }
-  .lip.l2 { top: calc(7px + var(--rh) + 6px + var(--rh) - 4px); }
-  .sideplate { width: 38px; padding: 5px 3px 7px; }
-  #counter { top: -22px; right: 6px; }
-  #counter .dig { width: 14px; height: 20px; }
-  #counter .dig span { font-size: 13px; line-height: 20px; }
+  #msgbar { min-height: 16px; font-size: 11px; padding: 1px 8px; }
+  /* sağda sayaca yer bırak: butonlar sayacın altına giremez */
+  #actions { padding: 2px 62px 3px 10px; gap: 5px; }
+  #actions .btn.small { padding: 5px 9px; font-size: 11.5px; }
+  #rackwrap { padding: 4px 5px calc(3px + env(safe-area-inset-bottom)); }
+  #racktray { padding: 6px 12px 7px; }
+  .lip.l1 { top: calc(6px + var(--rh) - 4px); }
+  .lip.l2 { top: calc(6px + var(--rh) + 6px + var(--rh) - 4px); }
+  .rackside { padding: 5px 5px; font-size: 8px; border-radius: 8px; }
+  .rackside .ic { font-size: 11px; }
+  /* sayaç: aksiyon satırının sağ ucuna küçülerek yerleşir — "Taş At" ile çakışmaz */
+  #counter { top: -27px; right: 2px; padding: 3px 4px; }
+  #counter .dig { width: 12px; height: 17px; }
+  #counter .dig span { font-size: 11px; line-height: 17px; }
+  /* mağaza: 6 sütun, her şey (Kapat dahil) tek ekrana sığar */
+  #modal { padding: 8px; }
+  #modal .box { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
+  .shopgrid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+  .pack { padding: 10px 3px 6px; gap: 2px; border-radius: 10px; }
+  .pico { font-size: 15px; }
+  .pchips { font-size: 11px; }
+  .pbonus { font-size: 8.5px; min-height: 10px; }
+  .pbuy { padding: 4px 2px; font-size: 10px; }
+  .pbadge { font-size: 8px; padding: 1px 6px; top: -7px; }
   .modecard { width: clamp(160px, 24vw, 210px); }
   .mc-art { min-height: 52px; }
   #event-col { width: 128px; }
@@ -1131,8 +1170,10 @@ input[type="range"].bahis {
         <div class="board" id="board-seri"></div>
         <div id="hubcol">
           <div id="tableinfo"></div>
-          <div id="indicator"></div>
-          <div id="deck"></div>
+          <div id="hubrow">
+            <div id="indicator"></div>
+            <div id="deck"></div>
+          </div>
         </div>
         <div class="board" id="board-cift"></div>
       </div>
@@ -2451,7 +2492,7 @@ function showShop() {
     '<div class="pbonus">' + (p.bonus ? '+' + p.bonus + ' bonus dahil' : '&nbsp;') + '</div>' +
     '<button class="btn small pbuy" data-pk="' + i + '">₺ ' + p.tl + '</button></div>').join('');
   modal('<h2><span class="coin">M</span> ÇİP MAĞAZASI</h2>' +
-    '<p class="reshead">Bakiyen: <span class="coin">M</span> <b>' + fmtChips(meta.chips) + '</b></p>' +
+    '<p class="reshead">Bakiyen: <span class="coin">M</span> <b>' + fmtChips(walletChips()) + '</b></p>' +
     '<div class="shopgrid">' + cards + '</div>' +
     '<p class="rules" style="font-size:11px;text-align:center">⚠ <b>DEMO mağaza</b> — gerçek ödeme alınmaz. Yayında Google Play / App Store faturalandırması buraya bağlanır.<br>Çipler yalnızca oyun içindir, paraya çevrilemez.</p>' +
     '<div class="btnrow"><button class="btn" onclick="window.closeModal()">Kapat</button></div>');
@@ -2470,6 +2511,7 @@ function buyPack(i) {
     const b = $('pk-ok');
     b.disabled = true;
     b.textContent = '⏳ İşleniyor…';
+    if (netReady()) { netSend({ t: 'buy', id: p.id }); return; } // çevrimiçi: çipi SUNUCU cüzdanına yazar
     setTimeout(() => {
       meta.chips += p.chips;
       saveMeta();
@@ -4673,6 +4715,18 @@ function netMsg(m) {
         initStart();
         showProfile(); // pencere güncel haliyle yeniden
       }
+      break;
+    case 'buy':
+      if (m.ok) {
+        NET.user = m.user;
+        closeModal();
+        playSnd('jackpot');
+        chipFx.quiet = true;
+        chipFx(m.chips);
+        toast('🎉 ' + fmtChips(m.chips) + ' çip hesabına eklendi! (demo)');
+        initStart();
+        setTimeout(showShop, 900);
+      } else { toast(m.msg || 'Satın alma başarısız.', true); closeModal(); showShop(); }
       break;
     case 'top': netShowTop(m); break;
     case 'waiting': netWaitingModal(m); break;

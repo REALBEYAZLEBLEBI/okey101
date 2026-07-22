@@ -742,6 +742,15 @@ function handleMessage(client, raw) {
       send(client.sock, { t: 'task', ok: true, id: def.id, odul: def.odul, user: pubUser(u) });
       break;
     }
+    case 'buy': { // DEMO satın alım — çip sunucu cüzdanına yazılır (yayında: makbuz doğrulaması buraya)
+      const u = DB.users[client.userId];
+      const PACKS = { cip_100k: 100000, cip_550k: 550000, cip_1m2: 1200000, cip_3m25: 3250000, cip_7m: 7000000, cip_15m: 15000000 };
+      const chips = PACKS[m.id];
+      if (!u || !chips) return send(client.sock, { t: 'buy', ok: false, msg: 'Geçersiz paket.' });
+      tx(u.id, chips, 'purchase-demo', m.id);
+      send(client.sock, { t: 'buy', ok: true, chips, user: pubUser(u) });
+      break;
+    }
     case 'top': { // liderlik tablosu
       const us = Object.values(DB.users).sort((a, b) => b.chips - a.chips);
       const rows = us.slice(0, 20).map((u, i) => ({
