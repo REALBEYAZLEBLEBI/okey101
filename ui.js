@@ -122,7 +122,7 @@ function initStart() {
   $('inp-name').value = store.get('okey101_name', 'Sen');
   $('lvl-line').innerHTML = '<span class="lvl">Sv ' + lv + '</span>' +
     '<div class="lvlbar"><div class="lvlfill" style="width:' + Math.round(prog * 100) + '%"></div></div>';
-  $('chips-val').textContent = fmtChips(meta.chips);
+  $('chips-val').textContent = fmtChips(netReady() ? NET.user.chips : meta.chips); // online: sunucu cüzdanı
   const gb = $('banner-gift');
   if (giftReady()) {
     gb.classList.add('ready');
@@ -141,15 +141,24 @@ function rizStake() {
   return Math.max(1000, Math.min(50000, Math.min(raw, meta.chips)));
 }
 $('inp-name').onchange = () => store.set('okey101_name', ($('inp-name').value || 'Sen').trim().slice(0, 12) || 'Sen');
-$('btn-start').onclick = () => { // HEMEN OYNA: ayarlardaki tercihlerle (farketmez = rastgele)
+$('btn-start').onclick = () => { // OYNA: online hızlı eşleşme (sunucu yoksa çevrimdışı pratik)
   const cfg = Object.assign({}, settings);
   cfg.el = qp.el || 1 + Math.floor(Math.random() * 5);
   cfg.esli = qp.mod === 'any' ? Math.random() < 0.35 : qp.mod === 'esli';
   cfg.yardimli = qp.yard === 'any' ? Math.random() < 0.8 : qp.yard === 'yard';
   cfg.katlamali = qp.kat === 'any' ? Math.random() < 0.5 : qp.kat === 'kat';
   cfg.rizikolu = false;
-  cfg.bahis = Math.min(Math.max(500, settings.bahis || 1000), meta.chips);
-  launch(cfg);
+  netTry(ok => {
+    if (ok) {
+      const stake = Math.min(Math.max(500, settings.bahis || 1000), NET.user.chips);
+      if (NET.user.chips < 500) { toast('Online bakiyen yetersiz.', true); return; }
+      netJoin(stake, cfg.el, { esli: cfg.esli, katlamali: cfg.katlamali }, cfg.yardimli);
+    } else {
+      toast('Sunucuya ulaşılamadı — çevrimdışı pratik modu.', true);
+      cfg.bahis = Math.min(Math.max(500, settings.bahis || 1000), meta.chips);
+      launch(cfg);
+    }
+  });
 };
 $('btn-odasec').onclick = () => odaSecDialog(ROOMS.findIndex(r => r.id === settings.room));
 $('btn-masaac').onclick = () => masaAcDialog(ROOMS.findIndex(r => r.id === settings.room));
@@ -180,7 +189,13 @@ function rizDialog() {
   $('rz-x').onclick = closeModal;
   $('rz-ok').onclick = () => {
     closeModal();
-    launch({ room: settings.room, bahis, el: 1, yardimli: yard, katlamali: kat, rizikolu: true });
+    netTry(ok => {
+      if (ok) netJoin(bahis, 1, { rizikolu: true, katlamali: kat }, yard);
+      else {
+        toast('Sunucuya ulaşılamadı — çevrimdışı pratik modu.', true);
+        launch({ room: settings.room, bahis, el: 1, yardimli: yard, katlamali: kat, rizikolu: true });
+      }
+    });
   };
 }
 $('banner-gift').onclick = () => {
@@ -340,10 +355,11 @@ $('btn-sort-l').onclick = () => { if (G) { ui.counterMode = 'cift'; sortRack('pa
 $('btn-sort-r').onclick = () => { if (G) { ui.counterMode = 'seri'; sortRack('runs'); render(); } };
 
 /* ---- oda başlığı: oklar hep aynı yerde, uçlarda durur (başa sarmaz) ---- */
-function roomRich(room) { return room.tavan > 0 && meta.chips > room.tavan; } // bakiye tavanı aşarsa giremez
+function walletChips() { return (typeof netReady === 'function' && netReady()) ? NET.user.chips : meta.chips; } // online: sunucu cüzdanı
+function roomRich(room) { return room.tavan > 0 && walletChips() > room.tavan; } // bakiye tavanı aşarsa giremez
 function roomHeadHtml(ri) {
   const room = ROOMS[ri];
-  const locked = meta.chips < room.giris;
+  const locked = walletChips() < room.giris;
   const note = locked ? ' · 🔒 Giriş şartı: ' + fmtChips(room.giris)
     : roomRich(room) ? ' · 💰 Tavan ' + fmtChips(room.tavan) + ' — bakiyen çok yüksek' : '';
   return '<div class="roomnav">' +
@@ -363,12 +379,13 @@ function bindRoomNav(ri, open) {
 function masaAcDialog(ri) {
   ri = Math.max(0, ri);
   const room = ROOMS[ri];
-  const locked = meta.chips < room.giris;
-  const maxB = Math.min(room.max, Math.max(room.min, meta.chips));
+  const myChips = walletChips(); // online: sunucu cüzdanı geçerli
+  const locked = myChips < room.giris;
+  const maxB = Math.min(room.max, Math.max(room.min, myChips));
   let bahis = Math.min(Math.max(settings.bahis, room.min), maxB);
   let el = Math.min(5, Math.max(1, settings.el || 3));
   let yard = settings.yardimli, kat = settings.katlamali, esli = !!settings.esli;
-  const canPlay = !locked && !roomRich(room) && meta.chips >= room.min;
+  const canPlay = !locked && !roomRich(room) && myChips >= room.min;
   modal(
     roomHeadHtml(ri) +
     '<div class="dlg-row"><span class="lbl">BAHİS</span><span class="val" id="dg-bval"><span class="coin">M</span> ' + fmtChips(bahis) + '</span></div>' +
@@ -402,7 +419,13 @@ function masaAcDialog(ri) {
   $('dg-x').onclick = closeModal;
   $('dg-ok').onclick = () => {
     closeModal();
-    launch({ room: room.id, bahis, el, yardimli: yard, katlamali: kat, esli });
+    netTry(ok => {
+      if (ok) netJoin(bahis, el, { esli, katlamali: kat }, yard);
+      else {
+        toast('Sunucuya ulaşılamadı — çevrimdışı pratik modu.', true);
+        launch({ room: room.id, bahis, el, yardimli: yard, katlamali: kat, esli });
+      }
+    });
   };
 }
 
@@ -410,7 +433,7 @@ function masaAcDialog(ri) {
 function odaSecDialog(ri) {
   ri = Math.max(0, ri);
   const room = ROOMS[ri];
-  const locked = meta.chips < room.giris;
+  const locked = walletChips() < room.giris;
   modal(
     roomHeadHtml(ri) +
     '<div class="dlg-row"><span class="lbl">🃏 EL SAYISI</span><span class="val">1 – 5 (masaya göre)</span></div>' +
@@ -421,7 +444,13 @@ function odaSecDialog(ri) {
   );
   bindRoomNav(ri, odaSecDialog);
   $('dg-x').onclick = closeModal;
-  $('dg-ok').onclick = () => { closeModal(); roomTablesDialog(ri); };
+  $('dg-ok').onclick = () => {
+    closeModal();
+    netTry(ok => {
+      if (ok) netLobbyDialog(ri); // gerçek lobi: sunucudaki bekleyen masalar
+      else { toast('Sunucuya ulaşılamadı — örnek masalar (çevrimdışı).', true); roomTablesDialog(ri); }
+    });
+  };
 }
 function roomTablesDialog(ri) {
   const room = ROOMS[ri];
@@ -785,7 +814,7 @@ function renderSeats() {
     el.innerHTML = '';
     const ava = document.createElement('div');
     ava.className = 'ava';
-    ava.textContent = i === 0 ? '🙂' : BOT_AVAS[i - 1];
+    ava.textContent = avaOf(i);
     el.appendChild(ava);
     const side = (i === 1 || i === 3);
     const info = document.createElement('div');
@@ -1962,7 +1991,7 @@ function showRoundEnd() {
 }
 
 /* oyun sonu satırı: avatar + isim + çip + puan (referans tasarım) */
-const avaOf = i => (i === 0 ? '🙂' : BOT_AVAS[i - 1]);
+const avaOf = i => (G && G.online && G.players[i] && G.players[i].ava) ? G.players[i].ava : (i === 0 ? '🙂' : BOT_AVAS[i - 1]);
 function resRow(o) {
   return '<div class="resrow' + (o.win ? ' win' : '') + (o.me ? ' me' : '') + '">' +
     '<span class="rava">' + (o.crown ? '<span class="rcrown">👑</span>' : '') + o.ava + '</span>' +
@@ -2236,6 +2265,7 @@ function botStats(name) {
 }
 function showPlayerCard(i) {
   if (!G) return;
+  if (NET.on) { netSend({ t: 'pcard', seat: (i + NET.seat) % 4 }); return; } // kart sunucudan gelir
   const p = G.players[i];
   const own = i === 0;
   const s = own ? meta.stats : botStats(p.name);
@@ -2353,15 +2383,20 @@ function netMsg(m) {
       store.set('okey101_nettoken', m.token);
       NET.user = m.user;
       netBanner(null);
+      if (!NET.on && !$('scr-start').classList.contains('hidden')) initStart(); // menüde sunucu bakiyesi görünsün
       if (NET._onReady) { const f = NET._onReady; NET._onReady = null; f(); }
       break;
     case 'joined':
       NET.seat = m.seat;
       NET.on = true;
       currentStake = m.stake;
-      currentSettings = { online: true, yardimli: true, katlamali: true };
+      currentSettings = { online: true, yardimli: NET.pendingYard !== false, katlamali: true };
+      document.querySelectorAll('.rackside').forEach(b => b.classList.toggle('hidden', NET.pendingYard === false));
       if (m.resumed) toast('Masana geri döndün — oyun kaldığı yerden.', false);
       break;
+    case 'lobby': netRenderLobby(m); break;
+    case 'pcard': netShowPcard(m); break;
+    case 'me': NET.user = m.user; if (!NET.on) initStart(); break;
     case 'waiting': netWaitingModal(m); break;
     case 'state': netApplyState(m.v); break;
     case 'ev': netStashEv(m); break;
@@ -2380,7 +2415,7 @@ function gFromView(v) {
     const srv = (loc + v.seat) % 4;
     const p = v.players[srv];
     return {
-      name: p.name, isBot: p.isBot,
+      name: p.name, ava: p.ava,
       hand: loc === 0 ? v.hand : [],
       opened: p.opened, openType: p.openType, openPoints: p.openPoints,
       penalty: p.penalty, score: p.score,
@@ -2396,7 +2431,7 @@ function gFromView(v) {
     discards: [0, 1, 2, 3].map(loc => v.discards[(loc + v.seat) % 4]),
     tableMelds: v.tableMelds.map(mm => ({ owner: netRot(mm.owner), type: mm.type, tiles: mm.tiles })),
     players,
-    katlamali: v.katlamali, carpan: v.carpan, esli: false, rizikolu: false,
+    katlamali: v.katlamali, carpan: v.carpan, esli: !!v.esli, rizikolu: !!v.rizikolu,
     soloOpen: -1, penaltyLog: [], finisher: -1,
     lastOpen: v.canUndo ? { player: 0 } : null,
     turnCounter: 0,
@@ -2420,6 +2455,7 @@ function netApplyState(v) {
     sortRack('runs');
     ui.sel.clear(); ui.hiddenOkeys.clear(); ui.drawnId = null;
     ui.counterMode = 'seri';
+    ui.lastCarpan = 1;
     if (NET.modalKind === 'round') { closeModal(); NET.modalKind = null; }
     playSnd('shuffle');
     if (!NET.stakeFxDone) { NET.stakeFxDone = true; setTimeout(() => chipFx(-currentStake), 600); }
@@ -2491,17 +2527,71 @@ function netTick() {
 /* ---- ekranlar ---- */
 function netWaitingModal(m) {
   NET.modalKind = 'waiting';
-  const rows = m.names.map((n, i) =>
-    '<div class="wseat' + (n ? '' : ' empty') + '"><span class="dot"></span>' +
-    (n ? escapeHtml(n) + (i === m.you ? ' (Sen)' : '') : 'Oyuncu bekleniyor…') + '</div>').join('');
-  modal('<h2>🌐 MASA BEKLENİYOR</h2>' +
-    '<p class="reshead">Bahis: <span class="coin">M</span> ' + fmtChips(currentStake) + ' · gerçek oyuncular katılabilir</p>' +
+  const rows = m.seats.map((s, i) =>
+    '<div class="wseat' + (s ? '' : ' empty') + '"><span class="dot"></span>' +
+    (s ? (s.ava || '🙂') + ' ' + escapeHtml(s.name) + (i === m.you ? ' (Sen)' : '') : 'Oyuncu aranıyor…') + '</div>').join('');
+  modal('<h2>MASA HAZIRLANIYOR</h2>' +
+    '<p class="reshead">Bahis: <span class="coin">M</span> ' + fmtChips(m.stake || currentStake) + '</p>' +
     '<div style="display:flex;flex-direction:column;gap:7px">' + rows + '</div>' +
-    '<p class="rules" style="font-size:11.5px;text-align:center">Masa dolmazsa kısa süre içinde botlarla tamamlanır.</p>' +
-    '<div class="btnrow finalbtns"><button class="btn exit" id="nw-x">VAZGEÇ</button>' +
-    '<button class="btn go" id="nw-fill">🤖 BOTLARLA BAŞLA</button></div>');
+    '<p class="rules" style="font-size:11.5px;text-align:center">Oyuncular katılıyor — masa dolunca oyun başlar.</p>' +
+    '<div class="btnrow"><button class="btn exit" id="nw-x" style="border-radius:999px;padding:10px 26px">VAZGEÇ</button></div>');
   $('nw-x').onclick = () => { netSend({ t: 'leave' }); };
-  $('nw-fill').onclick = () => netSend({ t: 'fill' });
+}
+
+/* ---- gerçek lobi: sunucudaki bekleyen masalar (oda aralığına göre) ---- */
+function netLobbyDialog(ri) {
+  const room = ROOMS[ri];
+  NET.modalKind = 'lobby';
+  NET.lobbyRange = [room.min, room.max];
+  modal(roomHeadHtml(ri) +
+    '<div id="lobby-list" style="display:flex;flex-direction:column;gap:7px;max-height:44vh;overflow-y:auto">' +
+    '<p class="rules" style="text-align:center">Masalar yükleniyor…</p></div>' +
+    '<div class="btnrow"><button class="btn secondary" id="lb-new">➕ YENİ MASA AÇ</button><button class="btn" id="lb-x">Kapat</button></div>');
+  bindRoomNav(ri, r => { netLobbyStop(); netLobbyDialog(r); });
+  $('lb-x').onclick = () => { netLobbyStop(); closeModal(); };
+  $('lb-new').onclick = () => { netLobbyStop(); closeModal(); masaAcDialog(ri); };
+  netSend({ t: 'lobby' });
+  NET.lobbyInt = setInterval(() => netSend({ t: 'lobby' }), 3000); // canlı yenilenir
+}
+function netLobbyStop() {
+  clearInterval(NET.lobbyInt);
+  NET.lobbyInt = null;
+  if (NET.modalKind === 'lobby') NET.modalKind = null;
+}
+function netRenderLobby(m) {
+  const list = $('lobby-list');
+  if (NET.modalKind !== 'lobby' || !list) return;
+  const mn = NET.lobbyRange ? NET.lobbyRange[0] : 0, mx = NET.lobbyRange ? NET.lobbyRange[1] : 1e15;
+  const ts = m.tables.filter(t => t.stake >= mn && t.stake <= mx);
+  list.innerHTML = ts.length ? ts.map(t => {
+    const filled = t.seats.filter(Boolean);
+    return '<div class="tablecard"><div class="tinfo">' +
+      '<div class="tname"><span class="coin">M</span> ' + fmtChips(t.stake) + ' · ' + t.rounds + ' EL</div>' +
+      '<div class="tmeta">' + (filled.map(s => (s.ava || '🙂') + ' ' + escapeHtml(s.name)).join(' · ') || 'Boş masa') + ' · ' + (4 - filled.length) + ' boş koltuk</div>' +
+      '<div class="tags"><span class="tag kat">' + (t.katlamali ? 'KATLAMALI' : 'KATLAMASIZ') + '</span>' +
+      (t.esli ? '<span class="tag">🤝 EŞLİ</span>' : '') + (t.rizikolu ? '<span class="tag">⚡ RİZİKOLU</span>' : '') + '</div></div>' +
+      '<button class="btn small" data-tid="' + t.id + '">OTUR</button></div>';
+  }).join('') : '<p class="rules" style="text-align:center">Bu odada bekleyen masa yok.<br>➕ Yeni masa aç — oyuncular sana katılsın!</p>';
+  list.querySelectorAll('[data-tid]').forEach(b => b.onclick = () => {
+    netLobbyStop();
+    closeModal();
+    NET.pendingYard = true;
+    NET.lastJoin = null;
+    netSend({ t: 'join', tableId: b.dataset.tid });
+  });
+}
+
+/* masadaki profile tıklanınca: kart SUNUCUDAN gelir (bot/insan ayrımı yok) */
+function netShowPcard(m) {
+  const c = m.card;
+  const winPct = c.games ? Math.round(c.wins / c.games * 100) : 0;
+  modal('<h2>' + (c.ava || '🙂') + ' ' + escapeHtml(c.name) + '</h2>' +
+    '<div class="dlg-row"><span class="lbl">ÇİP</span><span class="val"><span class="coin">M</span> ' + fmtChips(c.chips) + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">SEVİYE</span><span class="val">' + c.lv + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">OYUN</span><span class="val">' + c.games + '</span></div>' +
+    '<div class="dlg-row"><span class="lbl">GALİBİYET</span><span class="val">' + c.wins + ' (%' + winPct + ')</span></div>' +
+    '<div class="dlg-row"><span class="lbl">BAŞLANGIÇ</span><span class="val">' + c.start + '</span></div>' +
+    '<div class="btnrow"><button class="btn" onclick="window.closeModal()">Kapat</button></div>');
 }
 function netRoundEnd(s) {
   stopTurnTimer();
@@ -2541,14 +2631,28 @@ function netFinal(m) {
     '<button class="btn go" id="nf-again">YENİ OYUN</button></div>');
   if (myRow && myRow.receive > 0) setTimeout(() => chipFx(myRow.receive), 400);
   playSnd(myRow && myRow.rank === 1 ? 'win' : 'lose');
+  if (m.me) { NET.user = m.me; }
   $('nf-x').onclick = () => { closeModal(); netExit(); };
-  $('nf-again').onclick = () => { closeModal(); netJoin(NET.lastStake, NET.lastRounds); };
+  $('nf-again').onclick = () => {
+    closeModal();
+    const j = NET.lastJoin || { stake: currentStake || 1000, rounds: 1, opts: {}, yardimli: true };
+    netJoin(j.stake, j.rounds, j.opts, j.yardimli);
+  };
 }
-function netJoin(stake, rounds) {
-  NET.lastStake = stake; NET.lastRounds = rounds;
+function netJoin(stake, rounds, opts, yardimli) {
+  NET.lastJoin = { stake, rounds, opts: opts || {}, yardimli };
+  NET.pendingYard = yardimli !== false;
   NET.stakeFxDone = false; NET.lastTurnLoc = -1; NET.evQ.length = 0;
   chatState.msgs = []; chatState.unread = 0; renderChat();
-  netSend({ t: 'join', stake, rounds });
+  netSend(Object.assign({ t: 'join', stake, rounds }, opts || {}));
+}
+function netReady() { return !!(NET.ws && NET.ws.readyState === 1 && NET.user); }
+/* bağlanmayı dene; kısa sürede olmazsa çevrimdışı say */
+function netTry(cb) {
+  if (netReady()) return cb(true);
+  let done = false;
+  netConnect(() => { if (!done) { done = true; cb(true); } });
+  setTimeout(() => { if (!done) { done = true; cb(false); } }, 2500);
 }
 function netExit(msg) {
   NET.on = false; NET.leaving = false; NET.view = null; NET.modalKind = null;
@@ -2563,32 +2667,8 @@ function netExit(msg) {
   if (msg) toast(msg, true);
 }
 
-/* menü girişi: ONLİNE OYNA */
-$('btn-online').onclick = () => {
-  netConnect(() => {
-    const u = NET.user;
-    const maxB = Math.max(500, Math.min(u.chips, 100000));
-    let stake = Math.min(1000, maxB), rounds = 1;
-    modal('<h2>🌐 ONLİNE OYNA <span style="font-size:11px;color:#7bd75c">BETA</span></h2>' +
-      '<p class="reshead">Sunucu bakiyen: <span class="coin">M</span> <b>' + fmtChips(u.chips) + '</b> · ' + escapeHtml(u.name) + '</p>' +
-      '<div class="dlg-row"><span class="lbl">BAHİS</span><span class="val" id="no-bval"><span class="coin">M</span> ' + fmtChips(stake) + '</span></div>' +
-      '<input type="range" class="bahis" id="no-bahis" min="500" max="' + maxB + '" step="1" value="' + stake + '">' +
-      '<div class="dlg-row"><span class="lbl">🃏 EL SAYISI</span><span class="val" id="no-elval">1 EL</span></div>' +
-      '<input type="range" class="bahis" id="no-el" min="1" max="5" step="1" value="1">' +
-      '<p class="rules" style="font-size:11.5px;text-align:center">Aynı bahisle bekleyen gerçek oyuncularla eşleşirsin; masa dolmazsa botlar tamamlar.<br>Online cüzdan sunucuda tutulur — yerel çiplerinden ayrıdır.</p>' +
-      '<div class="btnrow"><button class="btn secondary" id="no-x">✕</button><button class="btn" id="no-ok">🌐 MASA BUL</button></div>');
-    const bv = $('no-bval'), sl = $('no-bahis'), ev = $('no-elval'), el2 = $('no-el');
-    sl.oninput = () => { stake = +sl.value; bv.innerHTML = '<span class="coin">M</span> ' + fmtChips(stake); };
-    el2.oninput = () => { rounds = +el2.value; ev.textContent = rounds + ' EL'; };
-    $('no-x').onclick = closeModal;
-    $('no-ok').onclick = () => { closeModal(); netJoin(stake, rounds); };
-  });
-  setTimeout(() => {
-    if (!NET.ws || NET.ws.readyState !== 1) {
-      toast('Sunucuya ulaşılamadı — server/README.md: node okey-server.js', true);
-    }
-  }, 2500);
-};
+/* açılışta sessizce bağlan: menü sunucu bakiyesini gösterir, OYNA anında eşleşir */
+setTimeout(() => netTry(() => {}), 350);
 window.__net = NET;
 
 /* init */

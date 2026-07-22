@@ -21,12 +21,37 @@ const FAST = !!process.env.OKEY_FAST;
 const DATA_FILE = process.env.OKEY_DATA || path.join(__dirname, 'data.json');
 
 const START_CHIPS = 100000;      // yeni hesap başlangıç bakiyesi
-const FILL_MS   = FAST ? 200 : 9000;   // bu süre içinde masa dolmazsa botla tamamla
-const BOT_MS    = +process.env.OKEY_BOT_MS || (FAST ? 25 : 950); // bot hamle temposu
+const FILL_MS   = +process.env.OKEY_FILL_MS || (FAST ? 200 : 6000); // ilk bot bu süreden sonra oturur
+const BOT_MS    = +process.env.OKEY_BOT_MS || (FAST ? 25 : 0);      // 0 = insansı rastgele tempo
 const TURN_MS   = FAST ? 4000 : 30000; // insan tur süresi
 const OPEN_MS   = FAST ? 4000 : 60000; // açış yapılan turda işleme süresi
 const ROUND_BREAK = FAST ? 250 : 7000; // eller arası bekleme
-const BOT_POOL = ['Elif', 'Burak', 'Zeynep', 'Kemal', 'Selin', 'Emre', 'Murat', 'Ceren'];
+
+/* GÖRÜNMEZ BOTLAR: gerçekçi kimlikler — istemciye "bot" bilgisi ASLA gitmez */
+const BOT_IDENTITIES = [
+  ['Mehmet K.', '🧔🏻'], ['Ayşe T.', '👩🏻'], ['Emre D.', '👨🏻'], ['Zeynep A.', '👩🏻‍🦰'],
+  ['Hasan Y.', '👨🏻‍🦳'], ['Elif S.', '👱🏻‍♀️'], ['Burak Ö.', '🧑🏻'], ['Selin M.', '👩🏻‍🦱'],
+  ['Kadir B.', '👨🏽'], ['Merve U.', '👩🏼'], ['Okan Ç.', '👨🏻‍🦱'], ['Derya G.', '🙎🏻‍♀️'],
+  ['Tolga E.', '🧔🏽'], ['Gamze P.', '👩🏽'], ['Serkan H.', '👨🏻‍🦲'], ['Nazlı O.', '💁🏻‍♀️'],
+];
+const BOT_CHAT = {
+  open: ['Açtım 😎', 'Ben açıldım', 'Hadi hayırlısı', 'İşte bu 👌'],
+  finish: ['Bitti! 🎉', 'Güzel eldi, eyvallah 👏', 'Sağlık olsun'],
+  idle: ['Taşlar hiç gelmiyor ya 😩', 'Çay tazeleyin ☕', 'Bu gösterge de bir şey değil 😅', 'Kolay gelsin herkese 🙂'],
+};
+function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+/* bota isme bağlı SABİT temsili profil (kart açılınca hep aynı görünür) */
+function botCard(name, ava) {
+  let h = 7;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 999983;
+  const games = 240 + h % 4700;
+  const wins = Math.round(games * (34 + h % 27) / 100);
+  return {
+    name, ava, chips: 100000 + (h % 120) * 50000, lv: 4 + h % 26,
+    games, wins, elden: 2 + h % 40,
+    start: String(1 + h % 28).padStart(2, '0') + '.' + String(1 + h % 12).padStart(2, '0') + '.' + (2021 + h % 5),
+  };
+}
 
 /* ---------------- Kalıcı depo (FAZ A: dosya; üretimde PostgreSQL) ---------------- */
 let DB = { users: {}, tokens: {}, ledger: [], seq: 0 };
@@ -113,17 +138,41 @@ function send(sock, obj) { if (sock && !sock.destroyed) sock.write(wsEncode(JSON
 const TABLES = new Map();
 let tableSeq = 0;
 
-function newTable(stake, rounds) {
+function newTable(stake, rounds, opts) {
   const tb = {
     id: 'm' + (++tableSeq) + '-' + crypto.randomBytes(2).toString('hex'),
     stake, rounds: rounds || 1,
+    opts: { esli: !!(opts && opts.esli), rizikolu: !!(opts && opts.rizikolu), katlamali: !(opts && opts.katlamali === false) },
     seats: [null, null, null, null],
     state: 'waiting', g: null,
     fillT: null, turnT: null, deadline: 0,
   };
   TABLES.set(tb.id, tb);
-  tb.fillT = setTimeout(() => fillAndStart(tb), FILL_MS);
+  // görünmez botlar: dolmayan koltuklara GERÇEK OYUNCU GİBİ tek tek otururlar
+  tb.fillT = setTimeout(() => botArrive(tb), FILL_MS + Math.random() * 2500);
   return tb;
+}
+function sameOpts(tb, rounds, opts) {
+  return tb.rounds === (rounds || 1) &&
+    tb.opts.esli === !!(opts && opts.esli) &&
+    tb.opts.rizikolu === !!(opts && opts.rizikolu) &&
+    tb.opts.katlamali === !(opts && opts.katlamali === false);
+}
+/* bir bot masaya oturur; masa dolana dek aralıklarla devam eder */
+function botArrive(tb) {
+  if (tb.state !== 'waiting') return;
+  if (!humanSeats(tb).length) { TABLES.delete(tb.id); return; } // kimse kalmadıysa masa kapanır
+  const seat = tb.seats.findIndex(s => !s);
+  if (seat < 0) return startTable(tb);
+  const used = new Set(tb.seats.filter(s => s && s.bot).map(s => s.name));
+  const id = BOT_IDENTITIES.find(x => !used.has(x[0])) || ['Misafir ' + seat, '🙂'];
+  tb.seats[seat] = { bot: true, name: id[0], ava: id[1] };
+  broadcastWaiting(tb);
+  if (tb.seats.every(s => s)) {
+    tb.fillT = setTimeout(() => startTable(tb), FAST ? 60 : 900 + Math.random() * 900);
+  } else {
+    tb.fillT = setTimeout(() => botArrive(tb), FAST ? 60 : 1300 + Math.random() * 2600);
+  }
 }
 function humanSeats(tb) { return tb.seats.filter(s => s && s.userId); }
 function seatName(tb, i) {
@@ -137,13 +186,25 @@ function isBotTurnSeat(tb, i) {
   return !s || s.bot || s.left || s.gone; // kopan/ayrılan oyuncuyu bot devralır
 }
 
-function joinTable(client, stake, rounds) {
+function joinTable(client, stake, rounds, opts, tableId) {
   const u = DB.users[client.userId];
   if (u.tableId && TABLES.has(u.tableId)) return sendErr(client, 'Zaten bir masadasın.');
-  if (u.chips < stake) return sendErr(client, 'Yetersiz bakiye.');
-  let tb = [...TABLES.values()].find(t => t.state === 'waiting' && t.stake === stake && t.seats.some(s => !s));
-  if (!tb) tb = newTable(stake, rounds);
-  const seat = tb.seats.findIndex(s => !s);
+  let tb = null;
+  if (tableId) { // lobiden belirli bir masaya oturma
+    tb = TABLES.get(tableId);
+    if (!tb || tb.state !== 'waiting') return sendErr(client, 'Masa dolu ya da kapandı.');
+    if (u.chips < tb.stake) return sendErr(client, 'Bu masa için bakiyen yetersiz.');
+  } else {
+    if (u.chips < stake) return sendErr(client, 'Yetersiz bakiye.');
+    tb = [...TABLES.values()].find(t =>
+      t.state === 'waiting' && t.stake === stake && sameOpts(t, rounds, opts) && t.seats.some(s => !s));
+    if (!tb) tb = newTable(stake, rounds, opts);
+  }
+  let seat = tb.seats.findIndex(s => !s);
+  if (seat < 0) { // insanlara öncelik: bekleyen masada bot koltuğu boşaltılır
+    seat = tb.seats.findIndex(s => s && s.bot);
+    if (seat < 0) return sendErr(client, 'Masa dolu.');
+  }
   tb.seats[seat] = { userId: u.id, sock: client.sock, gone: false, left: false };
   u.tableId = tb.id;
   client.tableId = tb.id;
@@ -153,21 +214,26 @@ function joinTable(client, stake, rounds) {
   broadcastWaiting(tb);
   if (humanSeats(tb).length === 4) startTable(tb);
 }
+function seatAva(tb, i) {
+  const s = tb.seats[i];
+  if (!s) return null;
+  if (s.bot) return s.ava || '🙂';
+  return DB.users[s.userId].ava || '🙂';
+}
 function broadcastWaiting(tb) {
   if (tb.state !== 'waiting') return;
-  const names = tb.seats.map((s, i) => s ? seatName(tb, i) : null);
-  forEachHuman(tb, (s, i) => send(s.sock, { t: 'waiting', names, you: i }));
+  const seats = tb.seats.map((s, i) => s ? { name: seatName(tb, i), ava: seatAva(tb, i) } : null);
+  forEachHuman(tb, (s, i) => send(s.sock, { t: 'waiting', seats, you: i, stake: tb.stake }));
 }
+/* 'fill' (test/gizli): kalan koltukları hemen doldur */
 function fillAndStart(tb) {
   if (tb.state !== 'waiting') return;
-  if (!humanSeats(tb).length) { TABLES.delete(tb.id); return; } // boş masa çöpe
-  const used = new Set(tb.seats.filter(s => s && s.bot).map(s => s.name));
-  for (let i = 0; i < 4; i++) {
-    if (!tb.seats[i]) {
-      const name = BOT_POOL.find(n => !used.has(n)) || 'Bot' + i;
-      used.add(name);
-      tb.seats[i] = { bot: true, name };
-    }
+  clearTimeout(tb.fillT);
+  while (tb.seats.some(s => !s)) {
+    const seat = tb.seats.findIndex(s => !s);
+    const used = new Set(tb.seats.filter(s => s && s.bot).map(s => s.name));
+    const id = BOT_IDENTITIES.find(x => !used.has(x[0])) || ['Misafir ' + seat, '🙂'];
+    tb.seats[seat] = { bot: true, name: id[0], ava: id[1] };
   }
   startTable(tb);
 }
@@ -184,7 +250,13 @@ function startTable(tb) {
     }
   }
   tb.state = 'playing';
-  tb.g = E.newGame({ names: tb.seats.map((s, i) => seatName(tb, i)), rounds: tb.rounds, katlamali: true });
+  tb.g = E.newGame({
+    names: tb.seats.map((s, i) => seatName(tb, i)),
+    rounds: tb.rounds,
+    katlamali: tb.opts.katlamali,
+    esli: tb.opts.esli,
+    rizikolu: tb.opts.rizikolu,
+  });
   E.startRound(tb.g);
   broadcastState(tb);
   scheduleTurn(tb);
@@ -203,13 +275,13 @@ function viewFor(tb, seat) {
     tookDiscard: g.players[seat].tookDiscard,
     canUndo: !!(g.lastOpen && g.lastOpen.player === seat),
     players: g.players.map((p, i) => ({
-      name: p.name, count: p.hand.length,
+      name: p.name, ava: seatAva(tb, i) || '🙂', count: p.hand.length,
       opened: p.opened, openType: p.openType, openPoints: p.openPoints || 0,
       penalty: p.penalty || 0, score: p.score,
-      isBot: !tb.seats[i] || !!tb.seats[i].bot,
-      connected: !!(tb.seats[i] && tb.seats[i].sock && !tb.seats[i].sock.destroyed),
+      // NOT: bot olup olmadığı BİLEREK gönderilmez — istemci ayırt edemez
     })),
-    deadline: tb.deadline, katlamali: g.katlamali !== false, carpan: g.carpan || 1,
+    deadline: tb.deadline, katlamali: g.katlamali !== false,
+    esli: !!g.esli, rizikolu: !!g.rizikolu, carpan: g.carpan || 1,
   };
 }
 function forEachHuman(tb, fn) {
@@ -234,7 +306,9 @@ function scheduleTurn(tb) {
   if (!g || g.roundOver || tb.state !== 'playing') return;
   if (isBotTurnSeat(tb, g.turn)) {
     tb.deadline = 0;
-    tb.turnT = setTimeout(() => botMove(tb), BOT_MS);
+    // insansı tempo: 1.2-3.4 sn düşünme, ara sıra daha uzun "dalma"
+    const think = BOT_MS || (1200 + Math.random() * 2200 + (Math.random() < 0.12 ? 2500 : 0));
+    tb.turnT = setTimeout(() => botMove(tb), think);
   } else {
     tb.deadline = Date.now() + TURN_MS;
     tb.turnT = setTimeout(() => timeoutPlay(tb), TURN_MS + 500);
@@ -247,7 +321,25 @@ function botMove(tb) {
   const seat = g.turn;
   const events = E.aiTakeTurn(g);
   broadcastEvents(tb, seat, events);
+  botChatter(tb, seat, events);
   afterAction(tb);
+}
+/* botlar ara sıra insan gibi konuşur (sadece bot koltuklarında) */
+function botChatter(tb, seat, events) {
+  if (FAST) return;
+  const s = tb.seats[seat];
+  if (!s || !s.bot) return;
+  let line = null;
+  for (const e of events) {
+    if ((e.type === 'open' || e.type === 'openPairs') && Math.random() < 0.5) line = pick(BOT_CHAT.open);
+    else if (e.type === 'discard' && e.finished) line = pick(BOT_CHAT.finish);
+  }
+  if (!line && Math.random() < 0.04) line = pick(BOT_CHAT.idle);
+  if (line) {
+    setTimeout(() => {
+      if (tb.state !== 'done') forEachHuman(tb, h => send(h.sock, { t: 'chat', seat, from: s.name, text: line }));
+    }, 600 + Math.random() * 1800);
+  }
 }
 function timeoutPlay(tb) {
   const g = tb.g;
@@ -297,15 +389,32 @@ function roundFlow(tb) {
     scheduleTurn(tb);
   }, ROUND_BREAK);
 }
-/* ---- oyun sonu: dağıtım (klasik): 1. → 3×bahis, 2. → bahsi, 3-4. → 0; tek açan → 4×bahis ---- */
+/* ---- oyun sonu dağıtımı ----
+   klasik : 1. → 3×bahis, 2. → bahsini geri alır, 3-4. → 0; tek açan → 4×bahis
+   rizikolu: 1. → bahis×çarpan + bahis, 2. → bahis, 3-4. → 0
+   eşli    : kazanan takımın her oyuncusu 2×bahis; beraberlikte herkes bahsini alır */
 function settle(tb) {
   tb.state = 'done';
   const g = tb.g;
   const order = g.players.map((p, i) => ({ p, i })).sort((a, b) => a.p.score - b.p.score);
-  const sweep = g.soloOpen === order[0].i;
-  const recMul = sweep ? [4, 0, 0, 0] : [3, 1, 0, 0];
+  let sweep = false;
+  let receiveOf; // rank → alınan
+  if (g.esli) {
+    const t0 = g.players[0].score + g.players[2].score;
+    const t1 = g.players[1].score + g.players[3].score;
+    const tie = t0 === t1;
+    const winTeam = t0 <= t1 ? 0 : 1; // 0 → koltuk 0&2
+    receiveOf = (rank, seatIdx) => tie ? tb.stake : ((seatIdx % 2) === winTeam ? 2 * tb.stake : 0);
+  } else if (g.rizikolu) {
+    const mul = g.carpan || 1;
+    receiveOf = rank => rank === 0 ? tb.stake * mul + tb.stake : rank === 1 ? tb.stake : 0;
+  } else {
+    sweep = g.soloOpen === order[0].i;
+    const recMul = sweep ? [4, 0, 0, 0] : [3, 1, 0, 0];
+    receiveOf = rank => recMul[rank] * tb.stake;
+  }
   const rows = order.map((o, rank) => {
-    const receive = recMul[rank] * tb.stake;
+    const receive = receiveOf(rank, o.i);
     const s = tb.seats[o.i];
     if (s && s.userId) {
       if (receive > 0) tx(s.userId, receive, 'win', tb.id);
@@ -485,6 +594,7 @@ function handleMessage(client, raw) {
     if (m.token && DB.tokens[m.token]) u = DB.users[DB.tokens[m.token]];
     if (!u && m.deviceId) u = getOrCreateUser(String(m.deviceId).slice(0, 64), m.name);
     if (!u) return sendErr(client, 'Kimlik yok.');
+    if (m.name && String(m.name).trim()) { u.name = String(m.name).trim().slice(0, 12); saveSoon(); } // isim güncel kalsın
     client.userId = u.id;
     const token = m.token && DB.tokens[m.token] === u.id ? m.token : issueToken(u.id);
     send(client.sock, { t: 'welcome', token, user: pubUser(u) });
@@ -494,7 +604,39 @@ function handleMessage(client, raw) {
   if (!client.userId) return sendErr(client, 'Önce hello.');
   switch (m.t) {
     case 'me': send(client.sock, { t: 'me', user: pubUser(DB.users[client.userId]) }); break;
-    case 'join': joinTable(client, Math.max(100, Math.floor(+m.stake || 1000)), Math.min(5, Math.max(1, +m.rounds || 1))); break;
+    case 'join':
+      joinTable(client, Math.max(100, Math.floor(+m.stake || 1000)), Math.min(5, Math.max(1, +m.rounds || 1)),
+        { esli: !!m.esli, rizikolu: !!m.rizikolu, katlamali: m.katlamali !== false }, m.tableId || null);
+      break;
+    case 'lobby': { // bekleyen masaların listesi (oda seç ekranı)
+      const tables = [...TABLES.values()]
+        .filter(t => t.state === 'waiting')
+        .slice(0, 40)
+        .map(t => ({
+          id: t.id, stake: t.stake, rounds: t.rounds,
+          esli: t.opts.esli, rizikolu: t.opts.rizikolu, katlamali: t.opts.katlamali,
+          seats: t.seats.map((s, i) => s ? { name: seatName(t, i), ava: seatAva(t, i) } : null),
+        }));
+      send(client.sock, { t: 'lobby', tables, online: Object.keys(DB.users).length + 137 });
+      break;
+    }
+    case 'pcard': { // masadaki bir oyuncunun profil kartı (bot/insan ayrımı SIZDIRILMAZ)
+      const tb = TABLES.get(client.tableId);
+      if (!tb || !tb.seats[m.seat]) break;
+      const s = tb.seats[m.seat];
+      let card;
+      if (s.bot) card = botCard(s.name, s.ava || '🙂');
+      else {
+        const u = DB.users[s.userId];
+        card = {
+          name: u.name, ava: u.ava || '🙂', chips: u.chips, lv: 1 + Math.floor(u.xp / 250),
+          games: u.games, wins: u.wins, elden: u.elden || 0,
+          start: new Date(u.created).toLocaleDateString('tr-TR'),
+        };
+      }
+      send(client.sock, { t: 'pcard', seat: m.seat, card });
+      break;
+    }
     case 'fill': { const tb = TABLES.get(client.tableId); if (tb && tb.state === 'waiting') fillAndStart(tb); break; }
     case 'act': handleAction(client, m); break;
     case 'chat': {
