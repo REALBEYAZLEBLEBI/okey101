@@ -24,7 +24,7 @@ const START_CHIPS = 100000;      // yeni hesap başlangıç bakiyesi
 const FILL_MS   = +process.env.OKEY_FILL_MS || (FAST ? 200 : 6000); // ilk bot bu süreden sonra oturur
 const BOT_MS    = +process.env.OKEY_BOT_MS || (FAST ? 25 : 0);      // 0 = insansı rastgele tempo
 const TURN_MS   = FAST ? 4000 : 30000; // insan tur süresi (temel)
-const TURN_SEQ  = [30000, 20000, 5000]; // el içinde azalan tempo: 1. tur 30, 2. tur 20, sonra 5 sn
+const IDLE_MS   = 8000; // üst üste 2 turunu boş geçirene (AFK) sonraki turlarda tanınan süre
 const OPEN_MS   = FAST ? 4000 : 60000; // açış yapılan turda işleme süresi
 const ROUND_BREAK = FAST ? 250 : 7000; // eller arası bekleme
 
@@ -356,7 +356,7 @@ function viewFor(tb, seat) {
     discards: g.discards, tableMelds: g.tableMelds,
     hand: g.players[seat].hand,
     tookDiscard: g.players[seat].tookDiscard,
-    canUndo: !!(g.lastOpen && g.lastOpen.player === seat),
+    canUndo: !!(tb.snapDirty && g.turn === seat), // GERİ AL: bu turda geri toplanacak hamle varsa
     players: g.players.map((p, i) => ({
       name: p.name, ava: seatAva(tb, i) || '🙂', count: p.hand.length,
       opened: p.opened, openType: p.openType, openPoints: p.openPoints || 0,
@@ -387,8 +387,9 @@ function scheduleTurn(tb) {
   clearTimeout(tb.turnT);
   const g = tb.g;
   if (!g || g.roundOver || tb.state !== 'playing') return;
-  // yeni el: süre sayaçları SIFIRDAN — önceki elden deadline/uzatma SARKMAZ (8 sn'de kalma hatası)
-  if (tb.turnRound !== g.round) { tb.turnRound = g.round; tb.turnCount = [0, 0, 0, 0]; tb.turnSeat = -1; tb.deadline = 0; }
+  // yeni el: süre durumu SIFIRDAN — önceki elden deadline/uzatma SARKMAZ
+  if (tb.turnRound !== g.round) { tb.turnRound = g.round; tb.turnSeat = -1; tb.deadline = 0; }
+  if (!tb.idleCount) tb.idleCount = [0, 0, 0, 0]; // üst üste boş geçirilen tur sayısı (masa boyu)
   if (isBotTurnSeat(tb, g.turn)) {
     tb.deadline = 0;
     tb.turnSeat = g.turn;
@@ -396,11 +397,14 @@ function scheduleTurn(tb) {
     const think = BOT_MS || (1200 + Math.random() * 2200 + (Math.random() < 0.12 ? 2500 : 0));
     tb.turnT = setTimeout(() => botMove(tb), think);
   } else {
-    // KESİNTİSİZ tek sayaç: aynı oyuncunun turu sürerken (çekiş→atış) süre TAZELENMEZ
+    // KESİNTİSİZ tek sayaç: aynı oyuncunun turu sürerken süre TAZELENMEZ.
+    // Süre: herkes 30 sn — yalnız üst üste 2 turunu boş geçiren (AFK) 8 sn'e düşer, hamle yapınca geri kazanır.
     const fresh = tb.turnSeat !== g.turn || !tb.deadline || tb.deadline <= Date.now();
     if (fresh) {
-      const n = tb.turnCount[g.turn]++;
-      tb.deadline = Date.now() + (FAST ? TURN_MS : TURN_SEQ[Math.min(n, TURN_SEQ.length - 1)]);
+      tb.deadline = Date.now() + (FAST ? TURN_MS : (tb.idleCount[g.turn] >= 2 ? IDLE_MS : TURN_MS));
+      tb.openExtended = false; // açış uzatması her turda EN FAZLA bir kez
+      tb.snapDirty = false;
+      tb.turnSnap = JSON.stringify(g); // GERİ AL: tur başı fotoğrafı (çekilen taş sonrası yenilenir)
     }
     tb.turnSeat = g.turn;
     tb.turnT = setTimeout(() => timeoutPlay(tb), Math.max(500, tb.deadline - Date.now()) + 500);
@@ -462,6 +466,7 @@ function botChatter(tb, seat, events) {
 function timeoutPlay(tb) {
   const g = tb.g;
   if (!g || g.roundOver || tb.state !== 'playing' || isBotTurnSeat(tb, g.turn)) return;
+  if (tb.idleCount) tb.idleCount[g.turn]++; // turunu boş geçirdi — 2 olunca sonraki turları 8 sn
   const p = g.players[g.turn];
   if (p.tookDiscard != null) E.returnDiscard(g);
   if (!g.hasDrawn) {
@@ -597,9 +602,12 @@ function handleAction(client, m) {
       if (r.ok) {
         evs = [{ type: m.mode === 'pairs' ? 'openPairs' : 'open', player: seat, melds }];
         if (m.mode === 'pairs' && E.checkAllPairsCancel(g)) { broadcastEvents(tb, seat, evs); return afterAction(tb); }
-        tb.deadline = Date.now() + OPEN_MS; // açış turu: işleme süresi
-        clearTimeout(tb.turnT);
-        tb.turnT = setTimeout(() => timeoutPlay(tb), OPEN_MS + 500);
+        if (!tb.openExtended) { // işleme süresi TEK SEFER tanınır — geri alıp yeniden açmak süreyi TAZELEMEZ
+          tb.openExtended = true;
+          tb.deadline = Date.now() + OPEN_MS;
+          clearTimeout(tb.turnT);
+          tb.turnT = setTimeout(() => timeoutPlay(tb), OPEN_MS + 500);
+        }
       }
       break;
     }
@@ -631,9 +639,19 @@ function handleAction(client, m) {
       if (r.ok) evs = [{ type: 'swap', player: seat, meld: m.mi }];
       break;
     }
-    case 'undo': r = E.undoOpen(g); break;
+    case 'undo': { // GERİ AL: bu turda yapılan HER ŞEYİ toplar (açış, işleme, yandan alınan) — süreye DOKUNMAZ
+      if (!tb.turnSnap || !tb.snapDirty) { r = { ok: false, err: 'Geri alınacak hamle yok.' }; break; }
+      tb.g = JSON.parse(tb.turnSnap);
+      tb.snapDirty = false;
+      r = { ok: true };
+      break;
+    }
   }
   if (!r.ok) return sendErr(client, r.err || 'Hamle geçersiz.');
+  tb.idleCount[seat] = 0; // hamle yaptı: AFK sayacı sıfır, sonraki turları yine 30 sn
+  if (m.a === 'draw') { tb.turnSnap = JSON.stringify(tb.g); tb.snapDirty = false; } // çekilen taş geri alınamaz
+  else if (['take', 'open', 'lay', 'layPair', 'attach', 'swap'].includes(m.a)) tb.snapDirty = true;
+  else if (m.a === 'return') tb.snapDirty = false;
   // son saniyelerde taş çekene atış için nefes: süre 8 sn'ye uzar
   if ((m.a === 'draw' || m.a === 'take') && tb.deadline && tb.deadline - Date.now() < 6000) {
     tb.deadline = Date.now() + 8000;
