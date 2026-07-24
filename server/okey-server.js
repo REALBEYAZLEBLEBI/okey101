@@ -23,7 +23,8 @@ const DATA_FILE = process.env.OKEY_DATA || path.join(__dirname, 'data.json');
 const START_CHIPS = 100000;      // yeni hesap başlangıç bakiyesi
 const FILL_MS   = +process.env.OKEY_FILL_MS || (FAST ? 200 : 6000); // ilk bot bu süreden sonra oturur
 const BOT_MS    = +process.env.OKEY_BOT_MS || (FAST ? 25 : 0);      // 0 = insansı rastgele tempo
-const TURN_MS   = FAST ? 4000 : 30000; // insan tur süresi
+const TURN_MS   = FAST ? 4000 : 30000; // insan tur süresi (temel)
+const TURN_SEQ  = [30000, 20000, 5000]; // el içinde azalan tempo: 1. tur 30, 2. tur 20, sonra 5 sn
 const OPEN_MS   = FAST ? 4000 : 60000; // açış yapılan turda işleme süresi
 const ROUND_BREAK = FAST ? 250 : 7000; // eller arası bekleme
 
@@ -395,7 +396,12 @@ function scheduleTurn(tb) {
   } else {
     // KESİNTİSİZ tek sayaç: aynı oyuncunun turu sürerken (çekiş→atış) süre TAZELENMEZ
     const fresh = tb.turnSeat !== g.turn || !tb.deadline || tb.deadline <= Date.now();
-    if (fresh) tb.deadline = Date.now() + TURN_MS;
+    if (fresh) {
+      // azalan tempo: oyuncunun bu eldeki 1. turu 30 sn, 2.si 20 sn, sonrakiler 5 sn
+      if (tb.turnRound !== g.round) { tb.turnRound = g.round; tb.turnCount = [0, 0, 0, 0]; }
+      const n = tb.turnCount[g.turn]++;
+      tb.deadline = Date.now() + (FAST ? TURN_MS : TURN_SEQ[Math.min(n, TURN_SEQ.length - 1)]);
+    }
     tb.turnSeat = g.turn;
     tb.turnT = setTimeout(() => timeoutPlay(tb), Math.max(500, tb.deadline - Date.now()) + 500);
     if (fresh) broadcastState(tb); // yeni deadline herkese gitsin (süre barları)
@@ -628,6 +634,12 @@ function handleAction(client, m) {
     case 'undo': r = E.undoOpen(g); break;
   }
   if (!r.ok) return sendErr(client, r.err || 'Hamle geçersiz.');
+  // son saniyelerde taş çekene atış için nefes: süre 8 sn'ye uzar
+  if ((m.a === 'draw' || m.a === 'take') && tb.deadline && tb.deadline - Date.now() < 6000) {
+    tb.deadline = Date.now() + 8000;
+    clearTimeout(tb.turnT);
+    tb.turnT = setTimeout(() => timeoutPlay(tb), 8500);
+  }
   if (evs) broadcastEvents(tb, seat, evs);
   afterAction(tb);
 }

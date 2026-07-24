@@ -429,7 +429,14 @@ input[type="range"].bahis {
   padding-top: env(safe-area-inset-top);
 }
 #topbar { padding-left: calc(8px + env(safe-area-inset-left, 0px) * 0.72) !important; padding-right: calc(8px + env(safe-area-inset-right, 0px) * 0.72) !important; }
-/* masa bahsi: büyük, canlı altın rozet */
+/* cüzdan rozeti + mağazaya giden + butonu */
+#chips-plus {
+  width: 20px; height: 20px; border-radius: 6px; border: 1px solid #266b29; cursor: pointer;
+  background: linear-gradient(180deg, #8fe15d, #4caf50 60%, #2f7d33); color: #eaffe0;
+  font-size: 15px; font-weight: 900; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 0 #1d571f, inset 0 1px 0 rgba(255,255,255,.45); margin-left: 3px; flex: none;
+}
+#chips-plus:active { transform: translateY(1px); }
 #chips-top {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 16.5px; font-weight: 900; color: #ffd54f; letter-spacing: .3px;
@@ -660,7 +667,7 @@ input[type="range"].bahis {
 #boards {
   position: absolute; top: 54px; bottom: 50px; left: 88px; right: 88px; z-index: 3; /* köşe sehpaları ve yan plakalarla ÇAKIŞMAZ */
   display: grid; gap: 7px;
-  grid-template-columns: 1fr auto minmax(104px, 24%);
+  grid-template-columns: 1fr auto minmax(64px, 12%); /* çift alanı yarıya indi — seri panosu geniş */
   grid-template-rows: 1fr;
 }
 .board {
@@ -682,7 +689,13 @@ input[type="range"].bahis {
   box-shadow: inset 0 3px 9px rgba(0,0,0,.55), inset 0 0 0 1.5px rgba(255,214,130,.18);
 }
 #hubcol .tile:not(.mini) { --tile-w: var(--hubtile); }
-#hubrow { display: flex; gap: 8px; align-items: center; justify-content: center; } /* gösterge + deste yan yana: hub kısalır */
+#hubrow { display: flex; gap: 7px; align-items: center; justify-content: center; } /* SERİ AÇ · gösterge · deste · ÇİFT AÇ */
+#hubrow .tile:not(.mini) { width: var(--hubtile); height: calc(var(--hubtile) * 1.42); } /* gösterge = deste: AYNI boy */
+/* sıra sende: yan profiller gizlenir, panolar kenara kadar genişler (referans oyunlar gibi) */
+.sideplate { transition: opacity .25s; }
+#boards { transition: left .25s ease, right .25s ease; }
+.myturn .sideplate { opacity: 0; pointer-events: none; }
+.myturn #boards { left: 52px; right: 52px; } /* plakalar gizli — köşe ıskartaları görünür kalır */
 /* kalan taş sayısı: destenin içine kabartma/oyma gibi işlenir */
 #deck .cnt {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -756,7 +769,10 @@ input[type="range"].bahis {
   display: flex; align-items: center; justify-content: center; text-shadow: 0 1px 2px rgba(0,0,0,.7);
 }
 #msgbar.err { color: #ff8a80; }
-#actions { display: flex; gap: 6px; padding: 5px 8px 7px; justify-content: center; flex-wrap: wrap; }
+/* aksiyonlar artık masanın ORTASINDA (hub altında) — alt şerit kalktı, masa büyüdü */
+#actions { display: flex; gap: 6px; padding: 0; justify-content: center; flex-wrap: wrap; }
+#act-left, #act-right { display: flex; flex-direction: column; gap: 4px; justify-content: center; min-width: 0; }
+#act-left .btn.small, #act-right .btn.small, #actions .btn.small { padding: 6px 9px; font-size: 11.5px; white-space: nowrap; }
 .sortbtn-inline { display: inline-block; }
 @media (min-width: 620px) { .sortbtn-inline { display: none; } }
 
@@ -1063,6 +1079,8 @@ input[type="range"].bahis {
   .sideplate { width: 36px; padding: 4px 2px 6px; gap: 4px; }
   .sideplate.left { left: 3px; } .sideplate.right { right: 3px; }
   .sideplate .ptrowwrap { display: none; } /* kısa ekranda plaka taşmasın — puan profil kartında */
+  .sideplate .nm { max-height: 52px; overflow: hidden; } /* uzun ad köşe ıskartasına uzanmasın */
+  .myturn #boards { left: 34px; right: 34px; } /* sıra sende: pano neredeyse kenara kadar */
   .ptile { width: 12px; height: 17px; font-size: 11px; border-radius: 3px; }
   #boards { top: 33px; bottom: 31px; left: 45px; right: 45px; gap: 5px; }
   .board { padding: 4px 4px; border-radius: 9px; }
@@ -1072,9 +1090,8 @@ input[type="range"].bahis {
   #topbar { padding: 2px 8px; font-size: 11.5px; gap: 6px; }
   #topbar .btn.small { padding: 4px 8px; font-size: 11px; }
   #msgbar { min-height: 16px; font-size: 11px; padding: 1px 8px; }
-  /* sağda sayaca yer bırak: butonlar sayacın altına giremez */
-  #actions { padding: 2px 62px 3px 10px; gap: 5px; }
-  #actions .btn.small { padding: 5px 9px; font-size: 11.5px; }
+  #actions { padding: 0; gap: 4px; }
+  #act-left .btn.small, #act-right .btn.small, #actions .btn.small { padding: 5px 7px; font-size: 10.5px; }
   #rackwrap { padding: 4px 5px calc(3px + env(safe-area-inset-bottom)); }
   #racktray { padding: 6px 12px 7px; }
   .lip.l1 { top: calc(6px + var(--rh) - 4px); }
@@ -1154,7 +1171,7 @@ input[type="range"].bahis {
       </div>
     </div>
     <div class="modecard riz" id="card-riz">
-      <div class="mc-title">TEK EL<br><span>KATLAMALI</span></div>
+      <div class="mc-title">RİZİKOLU<br><span>ÇARPANLI ODALAR</span></div>
       <div class="mc-art rizart">RİZİKOLU</div>
       <div class="mc-sub" id="riz-sub"></div>
       <div class="mc-btns"><button class="btn small" id="btn-riz">KATIL</button></div>
@@ -1189,9 +1206,12 @@ input[type="range"].bahis {
         <div id="hubcol">
           <div id="tableinfo"></div>
           <div id="hubrow">
+            <div id="act-left"></div>
             <div id="indicator"></div>
             <div id="deck"></div>
+            <div id="act-right"></div>
           </div>
+          <div id="actions"></div>
         </div>
         <div class="board" id="board-cift"></div>
       </div>
@@ -1208,7 +1228,6 @@ input[type="range"].bahis {
 
   <div id="msgbar"></div>
   <div id="seattimer" class="hidden"><div class="fill" id="seatfill"></div></div>
-  <div id="actions"></div>
   <div id="rackwrap">
     <button class="rackside" id="btn-sort-l"><span class="ic">7·7</span>ÇİFT DİZ</button>
     <div id="racktray">
@@ -2411,8 +2430,7 @@ function initStart() {
     gb.innerHTML = '🎁 2.500 ÇİP<br><span>Kalan: ' + giftLeftTxt() + '</span>';
   }
   $('klasik-online').textContent = fakeOnline(4800) + ' oyuncu';
-  const rizBahis = rizStake();
-  $('riz-sub').innerHTML = 'Bahis: <span class="coin">M</span> ' + fmtChips(rizBahis) + ' · ⚡ çarpanlı · tek el';
+  $('riz-sub').innerHTML = 'Bahis: <span class="coin">M</span> ' + fmtChips(RIZ_ROOMS[0].bahis) + ' – ' + fmtChips(RIZ_ROOMS[RIZ_ROOMS.length - 1].bahis);
   $('online-line').textContent = fakeOnline(70000) + ' Oyuncu Çevrimiçi';
 }
 function rizStake() {
@@ -2442,40 +2460,40 @@ $('btn-start').onclick = () => { // OYNA: online hızlı eşleşme (sunucu yoksa
 $('btn-odasec').onclick = () => odaSecDialog(ROOMS.findIndex(r => r.id === settings.room));
 $('btn-masaac').onclick = () => masaAcDialog(ROOMS.findIndex(r => r.id === settings.room));
 $('btn-riz').onclick = () => rizDialog();
+/* rizikolu odaları: masa bahsi sabit, min/max GİRİŞ bakiye şartı — OTUR: anında masaya */
+const RIZ_ROOMS = [
+  { bahis: 2000,    min: 7000,     max: 40000 },
+  { bahis: 10000,   min: 35000,    max: 200000 },
+  { bahis: 36000,   min: 126000,   max: 750000 },
+  { bahis: 100000,  min: 350000,   max: 2000000 },
+  { bahis: 500000,  min: 1750000,  max: 10000000 },
+  { bahis: 2000000, min: 7000000,  max: 0 },
+];
 function rizDialog() {
-  const maxB = Math.max(1000, Math.min(meta.chips, 250000));
-  let bahis = Math.min(rizStake(), maxB);
-  let kat = settings.katlamali, yard = settings.yardimli;
-  modal('<h2>⚡ RİZİKOLU MASA</h2>' +
-    '<div class="dlg-row"><span class="lbl">BAHİS</span><span class="val" id="rz-bval"><span class="coin">M</span> ' + fmtChips(bahis) + '</span></div>' +
-    '<input type="range" class="bahis" id="rz-bahis" min="1000" max="' + maxB + '" step="1" value="' + bahis + '">' +
-    '<div class="dlg-row"><span class="lbl">Katlamalı / Katlamasız</span><span class="dlg-toggle" id="rz-kat"></span></div>' +
-    '<div class="dlg-row"><span class="lbl">Yardımlı / Yardımsız</span><span class="dlg-toggle" id="rz-yard"></span></div>' +
-    '<p class="rules" style="font-size:12px">Okeyin sayısı, ★ ve okey masaya indikçe çarpan +1 · bitiş +1, elden +2, okeyle +4. Kazanan <b>bahis × çarpan</b> alır. Tek el oynanır.</p>' +
-    '<div class="btnrow"><button class="btn secondary" id="rz-x">✕</button><button class="btn" id="rz-ok">⚡ KATIL</button></div>');
-  const bval = $('rz-bval'), sl = $('rz-bahis');
-  sl.oninput = () => { bahis = +sl.value; bval.innerHTML = '<span class="coin">M</span> ' + fmtChips(bahis); };
-  const katBtn = $('rz-kat'), yardBtn = $('rz-yard');
-  const drawT = () => {
-    katBtn.textContent = kat ? 'KATLAMALI' : 'KATLAMASIZ';
-    katBtn.className = 'dlg-toggle ' + (kat ? 'warn' : 'on');
-    yardBtn.textContent = yard ? 'YARDIMLI' : 'YARDIMSIZ';
-    yardBtn.className = 'dlg-toggle ' + (yard ? 'on' : 'warn');
-  };
-  katBtn.onclick = () => { kat = !kat; drawT(); };
-  yardBtn.onclick = () => { yard = !yard; drawT(); };
-  drawT();
-  $('rz-x').onclick = closeModal;
-  $('rz-ok').onclick = () => {
+  const w = walletChips();
+  const rows = RIZ_ROOMS.map((r, i) => {
+    const ok = w >= r.min && (!r.max || w <= r.max);
+    const why = w < r.min ? 'bakiye yetersiz' : 'bakiyen tavanı aşıyor';
+    return '<div class="tablecard"><div class="tinfo">' +
+      '<div class="tname">⚡ <span class="coin">M</span> ' + fmtChips(r.bahis) + ' bahis</div>' +
+      '<div class="tmeta">Giriş: ' + fmtChips(r.min) + (r.max ? ' – ' + fmtChips(r.max) : ' ve üzeri') + ' çip</div></div>' +
+      '<button class="btn small" data-rz="' + i + '"' + (ok ? '' : ' disabled title="' + why + '"') + '>OTUR</button></div>';
+  }).join('');
+  modal('<h2>⚡ RİZİKOLU</h2>' +
+    '<p class="rules" style="text-align:center;font-size:11.5px">Çarpan büyüdükçe kazanç katlanır: okeyin sayısı, ★ ve okey masaya indikçe +1 · bitiş +1, elden +2, okeyle +4.</p>' +
+    '<div style="display:flex;flex-direction:column;gap:7px;max-height:52vh;overflow-y:auto">' + rows + '</div>' +
+    '<div class="btnrow"><button class="btn" onclick="window.closeModal()">Kapat</button></div>');
+  document.querySelectorAll('#modal-box [data-rz]').forEach(b => b.onclick = () => {
+    const r = RIZ_ROOMS[+b.dataset.rz];
     closeModal();
     netTry(ok => {
-      if (ok) netJoin(bahis, 1, { rizikolu: true, katlamali: kat }, yard);
+      if (ok) netJoin(r.bahis, 1, { rizikolu: true, katlamali: settings.katlamali }, settings.yardimli);
       else {
         toast('Sunucuya ulaşılamadı — çevrimdışı pratik modu.', true);
-        launch({ room: settings.room, bahis, el: 1, yardimli: yard, katlamali: kat, rizikolu: true });
+        launch({ room: settings.room, bahis: r.bahis, el: 1, yardimli: settings.yardimli, katlamali: settings.katlamali, rizikolu: true });
       }
     });
-  };
+  });
 }
 const DAILY_NEXT = s => [5000, 10000, 15000, 25000, 40000, 60000, 100000][Math.min(s, 6)];
 $('banner-gift').onclick = () => {
@@ -3018,7 +3036,10 @@ function render() {
   if (G.rizikolu && ui.lastCarpan != null && G.carpan > ui.lastCarpan) queueCarpanFx(ui.lastCarpan + 1, G.carpan);
   if (G.rizikolu) ui.lastCarpan = G.carpan;
   if (!drag) document.querySelectorAll('.tile.ghost, .ghostrow').forEach(g => g.remove());
-  $('chips-top').innerHTML = '<span class="coin">M</span> ' + fmtChips(currentStake || 0); // sadece masa bedeli
+  // üst rozet: CÜZDAN bakiyesi + mağazaya giden [+] (masa bahsi tableinfo'da)
+  $('chips-top').innerHTML = '<span class="coin">M</span> ' + fmtChips(walletChips()) + '<button id="chips-plus" title="Çip Mağazası">+</button>';
+  $('chips-plus').onclick = e => { e.stopPropagation(); showShop(); };
+  $('scr-game').classList.toggle('myturn', G.turn === 0 && !G.roundOver); // sıra sende: yan profiller gizli, panolar geniş
   const cb = $('carpan-badge');
   if (G.rizikolu) {
     const txt = '⚡×' + G.carpan;
@@ -3177,6 +3198,7 @@ function renderCorners() {
 function renderHub() {
   // masa bilgileri (üst boşluk): el, tek/eşli, katlama, yardım
   $('tableinfo').innerHTML =
+    (currentStake ? '<div class="ti gold"><span class="coin">M</span> ' + fmtChips(currentStake) + '</div>' : '') +
     '<div class="ti gold">El ' + G.round + '/' + G.rounds + '</div>' +
     '<div class="ti">' + (G.esli ? '🤝 EŞLİ' : 'TEK') + '</div>' +
     '<div class="ti">' + (G.katlamali !== false ? 'KATLAMALI' : 'KATLAMASIZ') + '</div>' +
@@ -3209,19 +3231,41 @@ function renderHub() {
 }
 
 function renderMelds() {
-  // düzenli masa: tüm perler tek akışta, başlangıç sayısına göre küçükten büyüğe
+  // düzenli masa: tüm perler sayıya (sonra renge) göre sıralı — "görünmez düzen"
   const seri = $('board-seri');
   const cift = $('board-cift');
+  // FLIP: mevcut perlerin eski konumları — yeni per girince diğerleri IŞINLANMAZ, kayar
+  const oldPos = {};
+  document.querySelectorAll('#boards .meld[data-mi]').forEach(el => { oldPos[el.dataset.mi] = el.getBoundingClientRect(); });
   seri.innerHTML = ''; cift.innerHTML = '';
   const startOf = m => Math.min(...m.tiles.map(t => {
     const e = E.effective(t, G.okey);
     return e ? e.num : 14;
   }));
+  const colorOf = m => {
+    const e = m.tiles.map(t => E.effective(t, G.okey)).find(Boolean);
+    return e ? e.color : 9;
+  };
   const all = G.tableMelds.map((m, mi) => ({ m, mi }));
-  const melds = all.filter(x => x.m.type !== 'pair').sort((a, b) => startOf(a.m) - startOf(b.m));
-  const pairs = all.filter(x => x.m.type === 'pair').sort((a, b) => startOf(a.m) - startOf(b.m));
+  const byNum = (a, b) => startOf(a.m) - startOf(b.m) || colorOf(a.m) - colorOf(b.m) || a.mi - b.mi;
+  const melds = all.filter(x => x.m.type !== 'pair').sort(byNum);
+  const pairs = all.filter(x => x.m.type === 'pair').sort(byNum);
   if (melds.length) seri.appendChild(meldRowEl(melds));
   if (pairs.length) cift.appendChild(meldRowEl(pairs));
+  document.querySelectorAll('#boards .meld[data-mi]').forEach(el => {
+    const o = oldPos[el.dataset.mi];
+    if (!o) return;
+    const n = el.getBoundingClientRect();
+    const dx = o.left - n.left, dy = o.top - n.top;
+    if (!dx && !dy) return;
+    el.style.transition = 'none';
+    el.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform .3s ease';
+      el.style.transform = '';
+      setTimeout(() => { el.style.transition = ''; }, 340);
+    });
+  });
 }
 function meldRowEl(items) {
   const row = document.createElement('div');
@@ -3714,13 +3758,15 @@ function onTurnTimeout() {
 function renderActions() {
   const bar = $('actions');
   bar.innerHTML = '';
+  $('act-left').innerHTML = ''; // SERİ AÇ göstergenin solunda
+  $('act-right').innerHTML = ''; // ÇİFT AÇ destenin sağında
   const mk = (label, fn, opts = {}) => {
     const b = document.createElement('button');
     b.className = 'btn small' + (opts.primary ? '' : ' secondary') + (opts.cls ? ' ' + opts.cls : '');
     b.textContent = label;
     b.disabled = !!opts.disabled;
     b.onclick = fn;
-    bar.appendChild(b);
+    (opts.slot ? $(opts.slot) : bar).appendChild(b);
     return b;
   };
   mk('Çift Diz', () => { ui.counterMode = 'cift'; sortRack('pairs'); render(); }, { cls: 'sortbtn-inline' });
@@ -3739,14 +3785,14 @@ function renderActions() {
   const req = E.openReq(G); // katlamalıda baraj öncekini geçer
   if (!p.opened) {
     mk('SERİ AÇ' + (hp ? ' · ' + a.meldPts + (req.seri > 101 ? '/' + req.seri : '') : ''), () => doOpenParsed('normal', a),
-       { primary: true, disabled: hp ? a.meldPts < req.seri : !a.melds.length });
+       { primary: true, disabled: hp ? a.meldPts < req.seri : !a.melds.length, slot: 'act-left' });
     mk('ÇİFT AÇ' + (hp ? ' · ' + a.pairs.length + (req.cift > 5 ? '/' + req.cift : '') : ''), () => doOpenParsed('pairs', a),
-       { disabled: hp ? a.pairs.length < req.cift : !a.pairs.length });
+       { disabled: hp ? a.pairs.length < req.cift : !a.pairs.length, slot: 'act-right' });
   } else if (p.openType === 'normal') {
-    mk('SERİ AÇ', () => doLayParsed(a), { disabled: !a.melds.length });
-    if (otherPairsOpen) mk('ÇİFT AÇ' + (hp ? ' · ' + a.pairs.length : ''), () => doLayPairsParsed(a), { disabled: !a.pairs.length });
+    mk('SERİ AÇ', () => doLayParsed(a), { disabled: !a.melds.length, slot: 'act-left' });
+    if (otherPairsOpen) mk('ÇİFT AÇ' + (hp ? ' · ' + a.pairs.length : ''), () => doLayPairsParsed(a), { disabled: !a.pairs.length, slot: 'act-right' });
   } else {
-    mk('ÇİFT AÇ', () => doLayPairsParsed(a), { disabled: !a.pairs.length });
+    mk('ÇİFT AÇ', () => doLayPairsParsed(a), { disabled: !a.pairs.length, slot: 'act-right' });
   }
   if (p.opened && hp) { // İŞLE yardımcısı yardımsızda kapalı
     mk('İŞLE' + (a.islekIds.size ? ' · ' + a.islekIds.size : ''), () => doAutoIslek(),
@@ -4697,12 +4743,21 @@ function netBanner(txt) {
   b.textContent = txt;
 }
 
+/* sunucu cüzdanı TEK gerçek: yerel meta ona eşitlenir (çip/seviye kaybolmaz) */
+function netSetUser(u) {
+  NET.user = u;
+  if (u) {
+    meta.chips = u.chips;
+    if (typeof u.xp === 'number') meta.xp = u.xp;
+    saveMeta();
+  }
+}
 function netMsg(m) {
   switch (m.t) {
     case 'welcome':
       NET.token = m.token;
       store.set('okey101_nettoken', m.token);
-      NET.user = m.user;
+      netSetUser(m.user);
       netBanner(null);
       if (!NET.on && !$('scr-start').classList.contains('hidden')) initStart(); // menüde sunucu bakiyesi görünsün
       if (NET._onReady) { const f = NET._onReady; NET._onReady = null; f(); }
@@ -4717,10 +4772,10 @@ function netMsg(m) {
       break;
     case 'lobby': netRenderLobby(m); break;
     case 'pcard': netShowPcard(m); break;
-    case 'me': NET.user = m.user; if (!NET.on) initStart(); break;
+    case 'me': netSetUser(m.user); if (!NET.on) initStart(); break;
     case 'daily':
       if (m.ok) {
-        NET.user = m.user;
+        netSetUser(m.user);
         chipFx(m.reward);
         toast('🎁 Günlük bonus: +' + fmtChips(m.reward) + ' çip! (Seri: ' + m.streak + ' gün)');
         initStart();
@@ -4728,7 +4783,7 @@ function netMsg(m) {
       break;
     case 'task':
       if (m.ok) {
-        NET.user = m.user;
+        netSetUser(m.user);
         chipFx(m.odul);
         toast('🎯 Görev ödülü: +' + fmtChips(m.odul) + ' çip!');
         initStart();
@@ -4737,7 +4792,7 @@ function netMsg(m) {
       break;
     case 'buy':
       if (m.ok) {
-        NET.user = m.user;
+        netSetUser(m.user);
         closeModal();
         playSnd('jackpot');
         chipFx.quiet = true;
@@ -4798,6 +4853,7 @@ function netApplyState(v) {
   if (v.deadline !== NET.lastDeadline) {
     NET.lastDeadline = v.deadline;
     NET.tTotal = v.deadline ? Math.max(1000, v.deadline - Date.now()) : 0;
+    NET.snapBar = true; // yeni tur: bar dolu başlar, "geri dolma" animasyonu görünmez
   }
   G = gFromView(v);
   if (NET.modalKind === 'waiting') { closeModal(); NET.modalKind = null; }
@@ -4878,7 +4934,14 @@ function netTick() {
   if (remain <= 0) { st.classList.add('hidden'); return; }
   st.classList.remove('hidden', 'anim');
   placeSeatTimer(G.turn);
-  sf.style.width = Math.max(0, Math.min(100, remain / (NET.tTotal || 30000) * 100)) + '%';
+  const w = Math.max(0, Math.min(100, remain / (NET.tTotal || 30000) * 100)) + '%';
+  if (NET.snapBar) { // tur değişimi: genişlik ANINDA oturur, sonra akıcı iner
+    NET.snapBar = false;
+    sf.style.transition = 'none';
+    sf.style.width = w;
+    void sf.offsetWidth;
+    sf.style.transition = '';
+  } else sf.style.width = w;
   st.classList.toggle('low', remain < 5000);
 }
 
@@ -4889,7 +4952,7 @@ function netWaitingModal(m) {
   closeModal();
   $('scr-start').classList.add('hidden');
   $('scr-game').classList.remove('hidden');
-  ['board-seri', 'board-cift', 'rack', 'actions', 'tableinfo', 'deck', 'indicator'].forEach(id => { const e = $(id); if (e) e.innerHTML = ''; });
+  ['board-seri', 'board-cift', 'rack', 'actions', 'act-left', 'act-right', 'tableinfo', 'deck', 'indicator'].forEach(id => { const e = $(id); if (e) e.innerHTML = ''; });
   $('counter').classList.add('hidden');
   $('seattimer').classList.add('hidden');
   document.querySelectorAll('.rackside').forEach(b => b.classList.add('hidden'));
