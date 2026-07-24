@@ -24,7 +24,7 @@ const START_CHIPS = 100000;      // yeni hesap başlangıç bakiyesi
 const FILL_MS   = +process.env.OKEY_FILL_MS || (FAST ? 200 : 6000); // ilk bot bu süreden sonra oturur
 const BOT_MS    = +process.env.OKEY_BOT_MS || (FAST ? 25 : 0);      // 0 = insansı rastgele tempo
 const TURN_MS   = FAST ? 4000 : 30000; // insan tur süresi (temel)
-const IDLE_MS   = 8000; // üst üste 2 turunu boş geçirene (AFK) sonraki turlarda tanınan süre
+const IDLE_MS   = 8000; // üst üste 2 ELİ hiç hamlesiz geçirene (AFK) 3. elden itibaren tur süresi
 const OPEN_MS   = FAST ? 4000 : 60000; // açış yapılan turda işleme süresi
 const ROUND_BREAK = FAST ? 250 : 7000; // eller arası bekleme
 
@@ -388,8 +388,15 @@ function scheduleTurn(tb) {
   const g = tb.g;
   if (!g || g.roundOver || tb.state !== 'playing') return;
   // yeni el: süre durumu SIFIRDAN — önceki elden deadline/uzatma SARKMAZ
-  if (tb.turnRound !== g.round) { tb.turnRound = g.round; tb.turnSeat = -1; tb.deadline = 0; }
-  if (!tb.idleCount) tb.idleCount = [0, 0, 0, 0]; // üst üste boş geçirilen tur sayısı (masa boyu)
+  if (tb.turnRound !== g.round) {
+    tb.turnRound = g.round; tb.turnSeat = -1; tb.deadline = 0;
+    // AFK takibi EL bazında: bir eli hiç hamlesiz geçirenin sayacı artar, hamle yapanınki sıfırlanır
+    if (!tb.idleRounds) tb.idleRounds = [0, 0, 0, 0];
+    if (tb.acted) for (let i = 0; i < 4; i++) tb.idleRounds[i] = tb.acted[i] ? 0 : tb.idleRounds[i] + 1;
+    tb.acted = [false, false, false, false];
+  }
+  if (!tb.idleRounds) tb.idleRounds = [0, 0, 0, 0];
+  if (!tb.acted) tb.acted = [false, false, false, false];
   if (isBotTurnSeat(tb, g.turn)) {
     tb.deadline = 0;
     tb.turnSeat = g.turn;
@@ -398,10 +405,11 @@ function scheduleTurn(tb) {
     tb.turnT = setTimeout(() => botMove(tb), think);
   } else {
     // KESİNTİSİZ tek sayaç: aynı oyuncunun turu sürerken süre TAZELENMEZ.
-    // Süre: herkes 30 sn — yalnız üst üste 2 turunu boş geçiren (AFK) 8 sn'e düşer, hamle yapınca geri kazanır.
+    // Süre: herkes her turda 30 sn — yalnız üst üste 2 ELİ hamlesiz geçiren (AFK) 8 sn'e düşer,
+    // tek hamleyle yine 30 sn'e döner.
     const fresh = tb.turnSeat !== g.turn || !tb.deadline || tb.deadline <= Date.now();
     if (fresh) {
-      tb.deadline = Date.now() + (FAST ? TURN_MS : (tb.idleCount[g.turn] >= 2 ? IDLE_MS : TURN_MS));
+      tb.deadline = Date.now() + (FAST ? TURN_MS : (tb.idleRounds[g.turn] >= 2 ? IDLE_MS : TURN_MS));
       tb.openExtended = false; // açış uzatması her turda EN FAZLA bir kez
       tb.snapDirty = false;
       tb.turnSnap = JSON.stringify(g); // GERİ AL: tur başı fotoğrafı (çekilen taş sonrası yenilenir)
@@ -466,7 +474,6 @@ function botChatter(tb, seat, events) {
 function timeoutPlay(tb) {
   const g = tb.g;
   if (!g || g.roundOver || tb.state !== 'playing' || isBotTurnSeat(tb, g.turn)) return;
-  if (tb.idleCount) tb.idleCount[g.turn]++; // turunu boş geçirdi — 2 olunca sonraki turları 8 sn
   const p = g.players[g.turn];
   if (p.tookDiscard != null) E.returnDiscard(g);
   if (!g.hasDrawn) {
@@ -533,8 +540,23 @@ function settle(tb) {
     const winTeam = t0 <= t1 ? 0 : 1; // 0 → koltuk 0&2
     receiveOf = (rank, seatIdx) => tie ? tb.stake : ((seatIdx % 2) === winTeam ? 2 * tb.stake : 0);
   } else if (g.rizikolu) {
+    /* ×çarpan GERÇEK tahsilat: 3. ve 4. toplam bahis×çarpan öder (bakiye yetmezse TÜM çipleri),
+       2. bahsini geri alır, kazanan toplanan her şeyi alır — kasa para basmaz, kayıplar cüzdandan düşer */
     const mul = g.carpan || 1;
-    receiveOf = rank => rank === 0 ? tb.stake * mul + tb.stake : rank === 1 ? tb.stake : 0;
+    const debt = tb.stake * mul; // kaybeden başına toplam borç (kilitlenen bahis dahil)
+    let poolWin = tb.stake; // kazananın kendi bahsi geri döner
+    order.forEach((o, rank) => {
+      if (rank < 2) return;
+      const s = tb.seats[o.i];
+      let paid = tb.stake; // masa başında kilitlenmişti
+      if (s && s.userId) {
+        const extra = Math.min(Math.max(0, DB.users[s.userId].chips), debt - tb.stake);
+        if (extra > 0) tx(s.userId, -extra, 'riz-borc', tb.id + ':x' + mul);
+        paid += extra;
+      } else paid = debt; // bot borcun tamamını öder
+      poolWin += paid;
+    });
+    receiveOf = rank => rank === 0 ? poolWin : rank === 1 ? tb.stake : 0;
   } else {
     sweep = g.soloOpen === order[0].i;
     const recMul = sweep ? [4, 0, 0, 0] : [3, 1, 0, 0];
@@ -648,7 +670,8 @@ function handleAction(client, m) {
     }
   }
   if (!r.ok) return sendErr(client, r.err || 'Hamle geçersiz.');
-  tb.idleCount[seat] = 0; // hamle yaptı: AFK sayacı sıfır, sonraki turları yine 30 sn
+  if (tb.acted) tb.acted[seat] = true; // bu elde hamle yaptı
+  if (tb.idleRounds) tb.idleRounds[seat] = 0; // AFK sayacı anında affeder: yine 30 sn
   if (m.a === 'draw') { tb.turnSnap = JSON.stringify(tb.g); tb.snapDirty = false; } // çekilen taş geri alınamaz
   else if (['take', 'open', 'lay', 'layPair', 'attach', 'swap'].includes(m.a)) tb.snapDirty = true;
   else if (m.a === 'return') tb.snapDirty = false;

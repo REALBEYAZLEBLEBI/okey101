@@ -749,9 +749,9 @@ input[type="range"].bahis {
 #boards { transition: left .25s ease, right .25s ease; }
 .myturn .sideplate { opacity: 0; pointer-events: none; }
 .myturn #boards { left: 74px; right: 74px; } /* plakalar gizli — köşe ıskartalarıyla ÇAKIŞMAZ */
-/* sıra rakipteyken kendi plakan da kaybolur: masa tertemiz (beklerken görünür) */
+/* SIRA SENDEYKEN kendi resmin kaybolur (masaya yer açılır); rakip oynarken görünür */
 .seat.bottom { transition: opacity .25s; }
-#scr-game:not(.myturn):not(.waiting) .seat.bottom { opacity: 0; pointer-events: none; }
+.myturn .seat.bottom { opacity: 0; pointer-events: none; }
 /* kalan taş sayısı: destenin içine kabartma/oyma gibi işlenir */
 #deck .cnt {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -797,18 +797,30 @@ input[type="range"].bahis {
   #board-cift { display: flex; flex-wrap: wrap; align-content: flex-start; }
 }
 
-/* tüm perler sıralı akışta; SERİ panosu ortadan çizgiyle İKİ SÜTUNA bölünür */
+/* çift panosu: perler akışta */
 .meldrow {
   display: flex; flex-wrap: wrap; gap: 7px 8px; align-items: flex-start;
   padding: 3px 3px 5px; border-bottom: none;
 }
-#board-seri .meldrow {
-  display: block;
-  column-count: 2; column-gap: 10px;
-  column-rule: 1px dashed rgba(255,255,255,.18);
-}
-#board-seri .meld { display: inline-flex; margin: 0 5px 7px 0; break-inside: avoid; vertical-align: top; }
 .meldrow:last-child { border-bottom: none; }
+/* SERİ panosu: 13 SÜTUNLU GRID — taşın numarası = sütunu; her per kendi satırında.
+   1-2-3 baştan, 8-8-8 sekizinci sütundan, 11-12-13 son hücreye oturur. */
+.meldgrid {
+  display: grid; grid-template-columns: repeat(13, 1fr);
+  grid-auto-flow: row dense; /* çakışmayan perler aynı hizayı paylaşır — masa taşmaz */
+  grid-auto-rows: min-content; row-gap: 5px;
+  padding: 3px 4px 5px; min-height: 100%; box-sizing: border-box;
+  background-image: repeating-linear-gradient(90deg,
+    transparent 0, transparent calc(100% / 13 - 1px),
+    rgba(255,255,255,.06) calc(100% / 13 - 1px), rgba(255,255,255,.06) calc(100% / 13));
+  background-origin: content-box; background-clip: content-box;
+}
+.meldgrid .meld {
+  display: grid; gap: 0; padding: 0; border-radius: 5px;
+  background: rgba(0,8,26,.42); border: 1px solid rgba(255,255,255,.15);
+  box-shadow: 0 2px 5px rgba(0,0,0,.3);
+}
+#board-seri .tile.mini { --tile-w: var(--bt, 17px); }
 .meld {
   display: flex; gap: 2px; padding: 4px 4px 3px; border-radius: 8px;
   background: linear-gradient(180deg, rgba(0,8,26,.5), rgba(0,8,26,.34));
@@ -1119,9 +1131,9 @@ input[type="range"].bahis {
   }
   /* ortadaki açılan perler küçülür ki iki sütun rahat sığsın */
   .tile.mini { --tile-w: clamp(13px, 3.4vh, 22px); }
-  .meld { padding: 2px 2px 2px; gap: 1px; border-radius: 6px; }
-  #board-seri .meld { margin: 0 3px 5px 0; }
+  .meldrow .meld { padding: 2px 2px 2px; gap: 1px; border-radius: 6px; }
   .meldrow { gap: 4px 5px; padding: 2px 2px 4px; }
+  .meldgrid { row-gap: 4px; padding: 2px 3px 4px; }
   .seat .ava, .sideplate .ava { width: 21px; height: 21px; font-size: 12px; }
   #table { margin: 2px 3px 0; padding: 5px; border-radius: 12px; }
   #felt { inset: 5px; border-radius: 9px; }
@@ -2955,6 +2967,7 @@ function beginRound() {
   G.players[0].hand.forEach((t, i) => { rackSlots[i] = t.id; });
   if (assist()) sortRack('runs'); // yardımsızda taşlar dağıtıldığı gibi yan yana gelir
   ui.lastCarpan = 1;
+  ui.carpanTurn = null;
   playSnd('shuffle'); // taşlar dağıtılıyor
   ui.sel.clear(); ui.drawnId = null;
   ui.hiddenOkeys.clear();
@@ -3145,8 +3158,17 @@ function render() {
   if (!G) return;
   if (drag && drag.moved) { pendingRender = true; return; }
   _an = null; // analiz önbelleğini tazele
-  if (G.rizikolu && ui.lastCarpan != null && G.carpan > ui.lastCarpan) queueCarpanFx(ui.lastCarpan + 1, G.carpan);
-  if (G.rizikolu) ui.lastCarpan = G.carpan;
+  if (G.rizikolu) {
+    /* çarpan, taş ATILDIKTAN sonra (tur el değiştirince) duyurulur — geri alırsa boşuna ×2 belirmez */
+    if (ui.lastCarpan == null) ui.lastCarpan = G.carpan;
+    if (G.carpan < ui.lastCarpan) ui.lastCarpan = G.carpan; // geri alındı: sessizce düş
+    const turnChanged = G.turn !== ui.carpanTurn;
+    if ((turnChanged || G.roundOver) && G.carpan > ui.lastCarpan) {
+      queueCarpanFx(ui.lastCarpan + 1, G.carpan);
+      ui.lastCarpan = G.carpan;
+    }
+    ui.carpanTurn = G.turn;
+  }
   if (!drag) document.querySelectorAll('.tile.ghost, .ghostrow').forEach(g => g.remove());
   $('chips-top').innerHTML = '<span class="coin">M</span> ' + fmtChips(currentStake || 0); // sol üst: masa bedeli (eski hali)
   $('topinfo').innerHTML = '<b>El ' + G.round + '/' + G.rounds + '</b> · ' + (G.esli ? '🤝 Eşli' : 'Tek') +
@@ -3155,7 +3177,7 @@ function render() {
   $('scr-game').classList.toggle('myturn', G.turn === 0 && !G.roundOver); // sıra sende: yan profiller gizli, panolar geniş
   const cb = $('carpan-badge');
   if (G.rizikolu) {
-    const txt = '⚡×' + G.carpan;
+    const txt = '⚡×' + (ui.lastCarpan != null ? ui.lastCarpan : G.carpan); // rozet de atıştan sonra artar
     cb.classList.remove('hidden');
     if (cb.textContent !== txt) { cb.textContent = txt; cb.classList.remove('bump'); void cb.offsetWidth; cb.classList.add('bump'); }
   } else cb.classList.add('hidden');
@@ -3337,10 +3359,11 @@ function renderHub() {
 }
 
 function renderMelds() {
-  // düzenli masa: tüm perler sayıya (sonra renge) göre sıralı — "görünmez düzen"
+  /* SERİ panosu: 13 sütunlu grid — taşın numarası = sütun. Her per KENDİ satırında,
+     geliş sırasıyla eklenir (masa asla karışmaz). 8-8-8 → 8. sütundan; 11-12-13 → sona oturur. */
   const seri = $('board-seri');
   const cift = $('board-cift');
-  // FLIP: mevcut perlerin eski konumları — yeni per girince diğerleri IŞINLANMAZ, kayar
+  // FLIP: işlenen taşla büyüyen per ışınlanmaz, kayar
   const oldPos = {};
   document.querySelectorAll('#boards .meld[data-mi]').forEach(el => { oldPos[el.dataset.mi] = el.getBoundingClientRect(); });
   seri.innerHTML = ''; cift.innerHTML = '';
@@ -3348,15 +3371,41 @@ function renderMelds() {
     const e = E.effective(t, G.okey);
     return e ? e.num : 14;
   }));
-  const colorOf = m => {
-    const e = m.tiles.map(t => E.effective(t, G.okey)).find(Boolean);
-    return e ? e.color : 9;
-  };
   const all = G.tableMelds.map((m, mi) => ({ m, mi }));
-  const byNum = (a, b) => startOf(a.m) - startOf(b.m) || colorOf(a.m) - colorOf(b.m) || a.mi - b.mi;
-  const melds = all.filter(x => x.m.type !== 'pair').sort(byNum);
-  const pairs = all.filter(x => x.m.type === 'pair').sort(byNum);
-  if (melds.length) seri.appendChild(meldRowEl(melds));
+  const melds = all.filter(x => x.m.type !== 'pair'); // geliş sırası: yeni per yeni satır
+  const pairs = all.filter(x => x.m.type === 'pair').sort((a, b) => startOf(a.m) - startOf(b.m));
+  if (melds.length) {
+    // hücre genişliği SINIRLI: taşlar küçük kalır, ızgara sol üstte kümelenir (referans oyun gibi)
+    const cap = window.innerHeight <= 620 ? 21 : 25;
+    const colw = Math.max(11, Math.min(cap, Math.floor((seri.clientWidth - 10) / 13)));
+    seri.style.setProperty('--bt', colw + 'px');
+    const grid = document.createElement('div');
+    grid.className = 'meldgrid';
+    grid.style.width = (colw * 13 + 8) + 'px';
+    for (const { m, mi } of melds) {
+      const el = document.createElement('div');
+      el.className = 'meld';
+      el.dataset.mi = mi;
+      const sorted = m.type === 'run' ? E.sortRunTiles(m.tiles, G.okey) : m.tiles;
+      const len = sorted.length;
+      // başlangıç sütunu: ilk taşın (okeyse temsil ettiği) numarası; taşarsa sona yaslanır
+      let start = 1;
+      for (let k = 0; k < sorted.length; k++) {
+        const e = E.effective(sorted[k], G.okey);
+        if (e) { start = m.type === 'run' ? e.num - k : e.num; break; }
+      }
+      start = Math.max(1, Math.min(start, 14 - len));
+      el.style.gridColumn = start + ' / span ' + len;
+      el.style.gridTemplateColumns = 'repeat(' + len + ', 1fr)';
+      for (const t of sorted) {
+        const te = tileEl(t, { mini: true });
+        te.dataset.tid = t.id;
+        el.appendChild(te);
+      }
+      grid.appendChild(el);
+    }
+    seri.appendChild(grid);
+  }
   if (pairs.length) cift.appendChild(meldRowEl(pairs));
   document.querySelectorAll('#boards .meld[data-mi]').forEach(el => {
     const o = oldPos[el.dataset.mi];
@@ -4970,6 +5019,7 @@ function netApplyState(v) {
     ui.sel.clear(); ui.hiddenOkeys.clear(); ui.drawnId = null;
     ui.counterMode = 'seri';
     ui.lastCarpan = 1;
+    ui.carpanTurn = null;
     if (NET.modalKind === 'round') { closeModal(); NET.modalKind = null; }
     playSnd('shuffle');
     if (!NET.stakeFxDone) { NET.stakeFxDone = true; setTimeout(() => chipFx(-currentStake), 600); }
