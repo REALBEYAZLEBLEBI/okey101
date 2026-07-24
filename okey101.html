@@ -254,6 +254,39 @@ body {
   background: linear-gradient(180deg, #ffe082, #ffb300 60%, #ff9800); border-color: #b26a00 !important; color: #4a2800;
   text-shadow: 0 1px 0 rgba(255,255,255,.4);
 }
+/* rizikolu: albüm kapağı gibi kaydırmalı oda kartları */
+.rzwrap {
+  display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory;
+  padding: 10px 12% 12px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.rzwrap::-webkit-scrollbar { display: none; }
+.rzcard {
+  flex: 0 0 76%; scroll-snap-align: center; text-align: center;
+  border: 2.5px solid var(--gold); border-radius: 20px; padding: 12px 12px 14px;
+  background:
+    radial-gradient(ellipse at 50% -20%, rgba(255,196,60,.28) 0%, transparent 55%),
+    linear-gradient(180deg, #5c1420 0%, #3d0d16 55%, #2a0810 100%);
+  box-shadow: 0 0 22px rgba(255,180,40,.28), 0 10px 24px rgba(0,0,0,.55), inset 0 0 0 4px rgba(0,0,10,.35), inset 0 1px 0 rgba(255,255,255,.18);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.rzcard.locked { filter: saturate(.35) brightness(.75); }
+.rzico { font-size: 26px; line-height: 1; filter: drop-shadow(0 3px 5px rgba(0,0,0,.6)); }
+.rzname { font-size: 15px; font-weight: 900; letter-spacing: 1.2px; color: var(--gold); text-shadow: 0 2px 0 rgba(90,50,0,.55), 0 3px 9px rgba(0,0,0,.6); }
+.rzbetlbl { font-size: 8.5px; font-weight: 900; letter-spacing: 2px; color: #ffcdd2; opacity: .85; margin-top: 3px; }
+.rzbet { font-size: 21px; font-weight: 900; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.7); }
+.rzbet .coin { font-size: 15px; }
+.rzmm {
+  display: flex; gap: 8px; width: 100%; justify-content: center; margin: 5px 0 7px;
+  font-size: 9.5px; font-weight: 700; color: #ffd7db;
+}
+.rzmm span { flex: 1; max-width: 46%; background: rgba(0,0,10,.32); border: 1px solid rgba(255,255,255,.14); border-radius: 10px; padding: 5px 4px; line-height: 1.45; }
+.rzmm b { font-size: 12px; color: #fff; }
+.rzgo {
+  width: 100%; padding: 9px 6px; font-size: 13.5px; border-radius: 12px;
+  background: linear-gradient(180deg, #8fe15d, #4caf50 55%, #2f7d33); border-color: #266b29; color: #10380f;
+  box-shadow: 0 4px 0 #1d571f, 0 7px 12px rgba(0,0,0,.45), inset 0 1px 0 #c9f5ae;
+}
+.rzlock { font-size: 10.5px; font-weight: 800; color: #ffb4ab; padding: 8px 4px; }
 /* ayarlar bölüm başlığı */
 .setsec {
   font-size: 13px; font-weight: 900; letter-spacing: 1.5px; color: var(--gold);
@@ -695,7 +728,10 @@ input[type="range"].bahis {
 .sideplate { transition: opacity .25s; }
 #boards { transition: left .25s ease, right .25s ease; }
 .myturn .sideplate { opacity: 0; pointer-events: none; }
-.myturn #boards { left: 52px; right: 52px; } /* plakalar gizli — köşe ıskartaları görünür kalır */
+.myturn #boards { left: 74px; right: 74px; } /* plakalar gizli — köşe ıskartalarıyla ÇAKIŞMAZ */
+/* sıra rakipteyken kendi plakan da kaybolur: masa tertemiz (beklerken görünür) */
+.seat.bottom { transition: opacity .25s; }
+#scr-game:not(.myturn):not(.waiting) .seat.bottom { opacity: 0; pointer-events: none; }
 /* kalan taş sayısı: destenin içine kabartma/oyma gibi işlenir */
 #deck .cnt {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -1080,7 +1116,7 @@ input[type="range"].bahis {
   .sideplate.left { left: 3px; } .sideplate.right { right: 3px; }
   .sideplate .ptrowwrap { display: none; } /* kısa ekranda plaka taşmasın — puan profil kartında */
   .sideplate .nm { max-height: 52px; overflow: hidden; } /* uzun ad köşe ıskartasına uzanmasın */
-  .myturn #boards { left: 34px; right: 34px; } /* sıra sende: pano neredeyse kenara kadar */
+  .myturn #boards { left: 44px; right: 44px; } /* sıra sende: pano genişler, köşelere değmez */
   .ptile { width: 12px; height: 17px; font-size: 11px; border-radius: 3px; }
   #boards { top: 33px; bottom: 31px; left: 45px; right: 45px; gap: 5px; }
   .board { padding: 4px 4px; border-radius: 9px; }
@@ -1151,7 +1187,7 @@ input[type="range"].bahis {
     </div>
     <div class="mtitle">101 <span>OKEY</span></div>
     <button class="btn secondary small" id="btn-friends">👥 Arkadaşlar</button>
-    <div id="chips-pill"><span class="coin">M</span> <b id="chips-val">0</b></div>
+    <div id="chips-pill"><span class="coin">M</span> <b id="chips-val">0</b><button id="chips-plus" title="Çip Mağazası">+</button></div>
     <button id="btn-plus" title="Çip Mağazası"><span class="cart">🛒</span></button>
     <button class="btn secondary small" id="btn-menu-settings">⚙ Ayarlar</button>
   </div>
@@ -2460,29 +2496,43 @@ $('btn-start').onclick = () => { // OYNA: online hızlı eşleşme (sunucu yoksa
 $('btn-odasec').onclick = () => odaSecDialog(ROOMS.findIndex(r => r.id === settings.room));
 $('btn-masaac').onclick = () => masaAcDialog(ROOMS.findIndex(r => r.id === settings.room));
 $('btn-riz').onclick = () => rizDialog();
-/* rizikolu odaları: masa bahsi sabit, min/max GİRİŞ bakiye şartı — OTUR: anında masaya */
+/* rizikolu odaları: albüm kapağı gibi kaydırmalı GÖSTERİŞLİ kartlar — OTUR: anında masaya */
 const RIZ_ROOMS = [
-  { bahis: 2000,    min: 7000,     max: 40000 },
-  { bahis: 10000,   min: 35000,    max: 200000 },
-  { bahis: 36000,   min: 126000,   max: 750000 },
-  { bahis: 100000,  min: 350000,   max: 2000000 },
-  { bahis: 500000,  min: 1750000,  max: 10000000 },
-  { bahis: 2000000, min: 7000000,  max: 0 },
+  { ad: 'ÇIRAK ŞİMŞEĞİ',   ico: '🌩️', bahis: 2000,    min: 7000,     max: 40000 },
+  { ad: 'YILDIRIM SOFRASI', ico: '⚡', bahis: 10000,   min: 35000,    max: 200000 },
+  { ad: 'FIRTINA MASASI',   ico: '🌪️', bahis: 36000,   min: 126000,   max: 750000 },
+  { ad: 'GÖK GÜRÜLTÜSÜ',    ico: '🌩️', bahis: 100000,  min: 350000,   max: 2000000 },
+  { ad: 'KASIRGA KULÜBÜ',   ico: '🌀', bahis: 500000,  min: 1750000,  max: 10000000 },
+  { ad: 'ZEUS\'UN SARAYI',  ico: '🏛️', bahis: 2000000, min: 7000000,  max: 0 },
 ];
 function rizDialog() {
   const w = walletChips();
-  const rows = RIZ_ROOMS.map((r, i) => {
+  // ilk uygun oda ortaya gelsin
+  let firstOk = RIZ_ROOMS.findIndex(r => w >= r.min && (!r.max || w <= r.max));
+  if (firstOk < 0) firstOk = 0;
+  const cards = RIZ_ROOMS.map((r, i) => {
     const ok = w >= r.min && (!r.max || w <= r.max);
-    const why = w < r.min ? 'bakiye yetersiz' : 'bakiyen tavanı aşıyor';
-    return '<div class="tablecard"><div class="tinfo">' +
-      '<div class="tname">⚡ <span class="coin">M</span> ' + fmtChips(r.bahis) + ' bahis</div>' +
-      '<div class="tmeta">Giriş: ' + fmtChips(r.min) + (r.max ? ' – ' + fmtChips(r.max) : ' ve üzeri') + ' çip</div></div>' +
-      '<button class="btn small" data-rz="' + i + '"' + (ok ? '' : ' disabled title="' + why + '"') + '>OTUR</button></div>';
+    const why = w < r.min ? '🔒 En az ' + fmtChips(r.min) + ' çip gerekir' : '🔒 Bakiyen tavanı aşıyor';
+    return '<div class="rzcard' + (ok ? '' : ' locked') + '">' +
+      '<div class="rzico">' + r.ico + '</div>' +
+      '<div class="rzname">' + r.ad + '</div>' +
+      '<div class="rzbetlbl">MASA BAHİSİ</div>' +
+      '<div class="rzbet"><span class="coin">M</span> ' + fmtChips(r.bahis) + '</div>' +
+      '<div class="rzmm"><span>Min. Giriş<br><b>' + fmtChips(r.min) + '</b></span>' +
+      '<span>Max. Giriş<br><b>' + (r.max ? fmtChips(r.max) : '∞') + '</b></span></div>' +
+      (ok ? '<button class="btn rzgo" data-rz="' + i + '">⚡ HEMEN OYNA</button>'
+          : '<div class="rzlock">' + why + '</div>') +
+      '</div>';
   }).join('');
-  modal('<h2>⚡ RİZİKOLU</h2>' +
-    '<p class="rules" style="text-align:center;font-size:11.5px">Çarpan büyüdükçe kazanç katlanır: okeyin sayısı, ★ ve okey masaya indikçe +1 · bitiş +1, elden +2, okeyle +4.</p>' +
-    '<div style="display:flex;flex-direction:column;gap:7px;max-height:52vh;overflow-y:auto">' + rows + '</div>' +
+  modal('<h2>⚡ RİZİKOLU ODALAR</h2>' +
+    '<div class="rzwrap" id="rz-wrap">' + cards + '</div>' +
+    '<p class="rules" style="text-align:center;font-size:10.5px;opacity:.85">← kaydırarak oda seç · çarpan büyüdükçe kazanç katlanır (okeyin sayısı, ★, masaya inen okey +1 · bitiş +1 · elden +2 · okeyle +4)</p>' +
     '<div class="btnrow"><button class="btn" onclick="window.closeModal()">Kapat</button></div>');
+  const wrap = $('rz-wrap');
+  setTimeout(() => { // modal yerleştikten sonra: uygun ilk oda ortalanır
+    const el0 = wrap.children[firstOk];
+    if (el0) wrap.scrollLeft = el0.offsetLeft - (wrap.clientWidth - el0.clientWidth) / 2;
+  }, 60);
   document.querySelectorAll('#modal-box [data-rz]').forEach(b => b.onclick = () => {
     const r = RIZ_ROOMS[+b.dataset.rz];
     closeModal();
@@ -2574,6 +2624,7 @@ function buyPack(i) {
   };
 }
 $('btn-plus').onclick = showShop;
+$('chips-plus').onclick = showShop; // menüdeki çip rozetinin içindeki [+]
 $('btn-menu-settings').onclick = menuSettings;
 
 /* ---- ana menü ayarları: genel + hemen oyna tercihleri + nasıl oynanır ---- */
@@ -2648,8 +2699,13 @@ function leaveTable() {
   initStart();
 }
 $('btn-satinal').onclick = showShop;
-$('btn-gamemenu').onclick = () => { // oyun içi menü: masayı temiz tutar
-  modal('<h2>☰ MENÜ</h2>' +
+$('btn-gamemenu').onclick = () => { // oyun içi menü: masayı temiz tutar (masa bilgisi de burada)
+  const info = G ? '<p class="reshead" style="font-size:12.5px">' +
+    (currentStake ? '<span class="coin">M</span> ' + fmtChips(currentStake) + ' · ' : '') +
+    'El ' + G.round + '/' + G.rounds + ' · ' + (G.esli ? '🤝 Eşli' : 'Tek') + ' · ' +
+    (G.katlamali !== false ? 'Katlamalı' : 'Katlamasız') + ' · ' + (assist() ? 'Yardımlı' : 'Yardımsız') +
+    (G.rizikolu ? ' · ⚡×' + G.carpan : '') + '</p>' : '';
+  modal('<h2>☰ MENÜ</h2>' + info +
     '<div class="btnrow" style="flex-direction:column;align-items:stretch;gap:8px">' +
     '<button class="btn secondary" id="gm-scores">📊 Puanlar</button>' +
     '<button class="btn secondary" id="gm-rules">📖 Nasıl Oynanır</button>' +
@@ -3036,9 +3092,8 @@ function render() {
   if (G.rizikolu && ui.lastCarpan != null && G.carpan > ui.lastCarpan) queueCarpanFx(ui.lastCarpan + 1, G.carpan);
   if (G.rizikolu) ui.lastCarpan = G.carpan;
   if (!drag) document.querySelectorAll('.tile.ghost, .ghostrow').forEach(g => g.remove());
-  // üst rozet: CÜZDAN bakiyesi + mağazaya giden [+] (masa bahsi tableinfo'da)
-  $('chips-top').innerHTML = '<span class="coin">M</span> ' + fmtChips(walletChips()) + '<button id="chips-plus" title="Çip Mağazası">+</button>';
-  $('chips-plus').onclick = e => { e.stopPropagation(); showShop(); };
+  $('chips-top').innerHTML = '<span class="coin">M</span> ' + fmtChips(currentStake || 0); // sol üst: masa bedeli (eski hali)
+  $('scr-game').classList.remove('waiting');
   $('scr-game').classList.toggle('myturn', G.turn === 0 && !G.roundOver); // sıra sende: yan profiller gizli, panolar geniş
   const cb = $('carpan-badge');
   if (G.rizikolu) {
@@ -3196,14 +3251,7 @@ function renderCorners() {
 }
 
 function renderHub() {
-  // masa bilgileri (üst boşluk): el, tek/eşli, katlama, yardım
-  $('tableinfo').innerHTML =
-    (currentStake ? '<div class="ti gold"><span class="coin">M</span> ' + fmtChips(currentStake) + '</div>' : '') +
-    '<div class="ti gold">El ' + G.round + '/' + G.rounds + '</div>' +
-    '<div class="ti">' + (G.esli ? '🤝 EŞLİ' : 'TEK') + '</div>' +
-    '<div class="ti">' + (G.katlamali !== false ? 'KATLAMALI' : 'KATLAMASIZ') + '</div>' +
-    '<div class="ti">' + (assist() ? 'YARDIMLI' : 'YARDIMSIZ') + '</div>' +
-    (G.rizikolu ? '<div class="ti gold">⚡ RİZİKOLU</div>' : '');
+  $('tableinfo').innerHTML = ''; // bilgi pilleri kaldırıldı — masa bilgisi ☰ menüde; orta alan panolara kaldı
   const deck = $('deck');
   deck.innerHTML = '';
   const back = tileEl('back');
@@ -4952,6 +5000,9 @@ function netWaitingModal(m) {
   closeModal();
   $('scr-start').classList.add('hidden');
   $('scr-game').classList.remove('hidden');
+  $('scr-game').classList.add('waiting'); // beklerken kendi koltuğun görünür kalır
+  $('scr-game').classList.remove('myturn');
+  $('chips-top').innerHTML = '<span class="coin">M</span> ' + fmtChips(m.stake || currentStake || 0);
   ['board-seri', 'board-cift', 'rack', 'actions', 'act-left', 'act-right', 'tableinfo', 'deck', 'indicator'].forEach(id => { const e = $(id); if (e) e.innerHTML = ''; });
   $('counter').classList.add('hidden');
   $('seattimer').classList.add('hidden');

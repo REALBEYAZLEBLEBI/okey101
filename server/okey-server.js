@@ -387,6 +387,8 @@ function scheduleTurn(tb) {
   clearTimeout(tb.turnT);
   const g = tb.g;
   if (!g || g.roundOver || tb.state !== 'playing') return;
+  // yeni el: süre sayaçları SIFIRDAN — önceki elden deadline/uzatma SARKMAZ (8 sn'de kalma hatası)
+  if (tb.turnRound !== g.round) { tb.turnRound = g.round; tb.turnCount = [0, 0, 0, 0]; tb.turnSeat = -1; tb.deadline = 0; }
   if (isBotTurnSeat(tb, g.turn)) {
     tb.deadline = 0;
     tb.turnSeat = g.turn;
@@ -397,8 +399,6 @@ function scheduleTurn(tb) {
     // KESİNTİSİZ tek sayaç: aynı oyuncunun turu sürerken (çekiş→atış) süre TAZELENMEZ
     const fresh = tb.turnSeat !== g.turn || !tb.deadline || tb.deadline <= Date.now();
     if (fresh) {
-      // azalan tempo: oyuncunun bu eldeki 1. turu 30 sn, 2.si 20 sn, sonrakiler 5 sn
-      if (tb.turnRound !== g.round) { tb.turnRound = g.round; tb.turnCount = [0, 0, 0, 0]; }
       const n = tb.turnCount[g.turn]++;
       tb.deadline = Date.now() + (FAST ? TURN_MS : TURN_SEQ[Math.min(n, TURN_SEQ.length - 1)]);
     }
